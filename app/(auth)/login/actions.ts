@@ -4,6 +4,8 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 
+
+
 export async function signInWithOtp(formData: FormData): Promise<void> {
   const supabase = await createClient();
 
@@ -45,6 +47,9 @@ console.log('SERVICE KEY PREFIX:', process.env.SUPABASE_SERVICE_ROLE_KEY?.slice(
 
   const siteUrl =
     process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, '') || 'http://localhost:3000';
+
+  console.log('SITE URL RUNTIME:', process.env.NEXT_PUBLIC_SITE_URL);
+  console.log('EMAIL REDIRECT TO:', `${siteUrl}/api/auth/callback`);  
 
   const { error } = await supabase.auth.signInWithOtp({
     email,

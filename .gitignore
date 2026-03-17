@@ -1,0 +1,27 @@
+# local env files
+.env.local
+.env*.local
+.env.example
+.env*.example
+
+# dependencies
+node_modules
+
+# next build output
+.next
+.next/
+.netlify
+.netlify/
+.env
+
+out
+
+# macOS
+.DS_Store
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+

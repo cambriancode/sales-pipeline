@@ -1,0 +1,547 @@
+import Link from 'next/link';
+import { notFound } from 'next/navigation';
+import { Card, Pill, SectionTitle } from '@/components/ui';
+import { PageHeader } from '@/components/page-header';
+import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
+import { OPPORTUNITY_DOCUMENT_BUCKET } from '@/lib/document-storage';
+import { getI18n } from '@/lib/i18n';
+import { demoOpportunities } from '@/lib/demo-data';
+import { addOpportunityActivity, addOpportunityDocument, addOpportunityProduct, closeOpportunity, updateOpportunity } from '../actions';
+
+function Notice({ type, message }: { type: 'success' | 'error'; message: string }) {
+  const tones = type === 'success'
+    ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+    : 'border-rose-200 bg-rose-50 text-rose-800';
+
+  return <div className={`rounded-2xl border px-4 py-3 text-sm ${tones}`}>{message}</div>;
+}
+
+export default async function OpportunityDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams?: Promise<{ success?: string; error?: string }>;
+}) {
+  const { id } = await params;
+  const resolvedSearchParams = (await searchParams) ?? {};
+  const { t, locale } = await getI18n();
+  const demo = demoOpportunities.find((item) => item.id === id);
+
+  if (demo) {
+    return (
+      <div className="space-y-8">
+        <PageHeader title={demo.title} description={t.opportunities.detailDescription} />
+        <div className="grid gap-6 lg:grid-cols-[1.35fr,0.95fr]">
+          <Card className="p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm text-slate-500">{demo.accountName} · {demo.city}</p>
+                <h2 className="mt-1 text-2xl font-semibold">{demo.title}</h2>
+              </div>
+              <Pill tone={demo.probability >= 80 ? 'emerald' : demo.probability >= 60 ? 'sky' : 'amber'}>
+                {locale === 'es' ? demo.stageNameEs : demo.stageNameEn}
+              </Pill>
+            </div>
+            <div className="mt-6 grid gap-4 md:grid-cols-3">
+              <div>
+                <p className="text-xs text-slate-500">{t.common.owner}</p>
+                <p className="font-semibold">{demo.ownerName}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500">{t.common.annualValue}</p>
+                <p className="font-semibold">{demo.annualValue.toLocaleString()}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500">{t.common.weighted}</p>
+                <p className="font-semibold">{demo.weightedValue.toLocaleString()}</p>
+              </div>
+            </div>
+            <div className="mt-6 rounded-2xl bg-slate-50 p-4">
+              <p className="text-xs text-slate-500">{t.common.nextAction}</p>
+              <p className="mt-1 font-medium">{locale === 'es' ? demo.nextActionEs : demo.nextActionEn}</p>
+              <p className="mt-1 text-sm text-slate-500">{demo.nextActionDate}</p>
+            </div>
+            <div className="mt-6">
+              <SectionTitle title={t.opportunities.commercialFocus} />
+              <p className="text-sm text-slate-600">{locale === 'es' ? demo.notesEs : demo.notesEn}</p>
+            </div>
+          </Card>
+
+          <div className="space-y-6">
+            <Card className="p-6">
+              <SectionTitle title={t.common.products} />
+              <div className="flex flex-wrap gap-2">
+                {(locale === 'es' ? demo.productsEs : demo.productsEn).map((product) => (
+                  <Pill key={product} tone="sky">{product}</Pill>
+                ))}
+              </div>
+            </Card>
+            <Card className="p-6">
+              <SectionTitle title={t.opportunities.stageSummary} />
+              <ul className="space-y-3 text-sm text-slate-600">
+                <li>{t.common.stage}: {locale === 'es' ? demo.stageNameEs : demo.stageNameEn}</li>
+                <li>{t.opportunities.probability}: {demo.probability}%</li>
+                <li>{t.opportunities.type}: {locale === 'es' ? demo.typeEs : demo.typeEn}</li>
+                <li>{t.opportunities.expectedClose}: {demo.nextActionDate}</li>
+              </ul>
+            </Card>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const supabase = await createClient();
+  const [{ data: opportunity }, { data: lines }, { data: products }, { data: stages }, { data: activities }, { data: history }, { data: tasks }, { data: documentTypes }, { data: documents }, { data: lostReasons }] = await Promise.all([
+    supabase
+      .from('opportunities')
+      .select(`
+        id,
+        title,
+        status,
+        probability,
+        annual_value_estimate,
+        first_value_estimate,
+        weighted_value,
+        expected_close_date,
+        next_action,
+        next_action_due_date,
+        need_summary,
+        account_id,
+        stage_id,
+        close_date,
+        close_value,
+        accounts(name),
+        opportunity_stages(name),
+        opportunity_types(name)
+      `)
+      .eq('id', id)
+      .maybeSingle(),
+    supabase
+      .from('opportunity_products')
+      .select('id, custom_item_name, quantity_estimate, unit_price_estimate, products(name)')
+      .eq('opportunity_id', id)
+      .order('created_at', { ascending: false }),
+    supabase.from('products').select('id, name').order('name'),
+    supabase.from('opportunity_stages').select('id, name').order('sort_order'),
+    supabase
+      .from('activities')
+      .select('id, activity_type, summary, details, next_step, activity_at')
+      .eq('opportunity_id', id)
+      .order('activity_at', { ascending: false })
+      .limit(10),
+    supabase
+      .from('opportunity_stage_history')
+      .select('id, changed_at, to_probability, opportunity_stages!opportunity_stage_history_to_stage_id_fkey(name)')
+      .eq('opportunity_id', id)
+      .order('changed_at', { ascending: false })
+      .limit(10),
+    supabase
+      .from('tasks')
+      .select('id, description, due_date, status')
+      .eq('opportunity_id', id)
+      .order('due_date', { ascending: true })
+      .limit(10),
+    supabase.from('document_types').select('id, name').order('sort_order'),
+    supabase
+      .from('documents')
+      .select('id, request_date, due_date, status, notes, file_path, file_name, uploaded_at, document_types(name)')
+      .eq('opportunity_id', id)
+      .order('created_at', { ascending: false })
+      .limit(10),
+    supabase.from('lost_reasons').select('id, name').order('sort_order'),
+  ]);
+
+  if (!opportunity) notFound();
+
+  function relationName(value: unknown): string {
+    if (Array.isArray(value)) {
+      const first = value[0] as { name?: string } | undefined;
+      return first?.name ?? '—';
+    }
+
+    const obj = value as { name?: string } | null | undefined;
+    return obj?.name ?? '—';
+  }
+
+  const accountName = relationName((opportunity as any).accounts);
+  const stageName = relationName((opportunity as any).opportunity_stages);
+  const typeName = relationName((opportunity as any).opportunity_types);
+
+  const documentsWithUrls = await Promise.all(
+    (documents ?? []).map(async (document: any) => {
+      if (!document.file_path) {
+        return { ...document, signedUrl: null };
+      }
+
+      try {
+        const admin = createAdminClient();
+        const { data } = await admin.storage
+          .from(OPPORTUNITY_DOCUMENT_BUCKET)
+          .createSignedUrl(document.file_path, 60 * 15);
+
+        return { ...document, signedUrl: data?.signedUrl ?? null };
+      } catch {
+        return { ...document, signedUrl: null };
+      }
+    })
+  );
+
+  const copy = {
+    commercialPanel: locale === 'es' ? 'Editar oportunidad' : 'Edit opportunity',
+    productsPanel: locale === 'es' ? 'Productos y servicios vinculados' : 'Linked products and services',
+    addLine: locale === 'es' ? 'Agregar línea' : 'Add line item',
+    addActivity: locale === 'es' ? 'Agregar actividad' : 'Add activity',
+    activityTimeline: locale === 'es' ? 'Timeline comercial' : 'Commercial timeline',
+    stageHistory: locale === 'es' ? 'Historial de etapa' : 'Stage history',
+    customItem: locale === 'es' ? 'Placeholder / item manual' : 'Placeholder / custom item',
+    quantity: locale === 'es' ? 'Cantidad estimada' : 'Estimated quantity',
+    unitPrice: locale === 'es' ? 'Precio unitario' : 'Unit price',
+    saveChanges: locale === 'es' ? 'Guardar cambios' : 'Save changes',
+    summary: locale === 'es' ? 'Resumen' : 'Summary',
+    details: locale === 'es' ? 'Detalle' : 'Details',
+    nextStep: locale === 'es' ? 'Siguiente paso' : 'Next step',
+    noActivities: locale === 'es' ? 'Sin actividades todavía.' : 'No activities yet.',
+    noHistory: locale === 'es' ? 'Sin cambios de etapa todavía.' : 'No stage changes yet.',
+    nextStepDate: locale === 'es' ? 'Fecha siguiente paso' : 'Next-step due date',
+    followUpTasks: locale === 'es' ? 'Tareas vinculadas' : 'Linked tasks',
+    noTasks: locale === 'es' ? 'Sin tareas vinculadas todavía.' : 'No linked tasks yet.',
+    docsPanel: locale === 'es' ? 'Pipeline documental' : 'Document pipeline',
+    addDoc: locale === 'es' ? 'Registrar documento' : 'Track document',
+    uploadFile: locale === 'es' ? 'Adjuntar archivo' : 'Attach file',
+    uploaded: locale === 'es' ? 'Archivo cargado' : 'File uploaded',
+    download: locale === 'es' ? 'Descargar' : 'Download',
+    noDocs: locale === 'es' ? 'Sin documentos registrados todavía.' : 'No documents tracked yet.',
+    closePanel: locale === 'es' ? 'Cerrar / pausar oportunidad' : 'Close / pause opportunity',
+    closeValue: locale === 'es' ? 'Valor final' : 'Final value',
+    closeDate: locale === 'es' ? 'Fecha de cierre' : 'Close date',
+    wonProof: locale === 'es' ? 'Prueba de cierre' : 'Win proof',
+    lostReason: locale === 'es' ? 'Motivo de pérdida' : 'Lost reason',
+    holdUntil: locale === 'es' ? 'Pausar hasta' : 'On hold until',
+    markWon: locale === 'es' ? 'Marcar ganada' : 'Mark won',
+    markLost: locale === 'es' ? 'Marcar perdida' : 'Mark lost',
+    markHold: locale === 'es' ? 'Poner en pausa' : 'Put on hold',
+    currentStatus: locale === 'es' ? 'Estado actual' : 'Current status',
+  };
+
+  return (
+    <div className="space-y-8">
+      <PageHeader title={opportunity.title} description={t.opportunities.detailDescription} />
+      {resolvedSearchParams.success ? <Notice type="success" message={resolvedSearchParams.success} /> : null}
+      {resolvedSearchParams.error ? <Notice type="error" message={resolvedSearchParams.error} /> : null}
+      <div className="grid gap-6 xl:grid-cols-[1.1fr,0.9fr,0.8fr]">
+        <div className="space-y-6">
+          <Card className="p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm text-slate-500">{accountName}</p>
+                <h2 className="mt-1 text-2xl font-semibold">{opportunity.title}</h2>
+              </div>
+              <div className="flex flex-col items-end gap-2">
+                <Pill tone={opportunity.status === 'won' ? 'emerald' : opportunity.status === 'lost' ? 'rose' : opportunity.status === 'on_hold' ? 'amber' : Number(opportunity.probability) >= 60 ? 'sky' : 'amber'}>
+                  {stageName}
+                </Pill>
+                <Pill tone={opportunity.status === 'won' ? 'emerald' : opportunity.status === 'lost' ? 'rose' : opportunity.status === 'on_hold' ? 'amber' : 'slate'}>{opportunity.status}</Pill>
+              </div>
+            </div>
+            <div className="mt-6 grid gap-4 md:grid-cols-3">
+              <div>
+                <p className="text-xs text-slate-500">{t.common.annualValue}</p>
+                <p className="font-semibold">{Number(opportunity.annual_value_estimate).toLocaleString()}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500">{t.common.weighted}</p>
+                <p className="font-semibold">{Number(opportunity.weighted_value).toLocaleString()}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500">{t.opportunities.probability}</p>
+                <p className="font-semibold">{Number(opportunity.probability)}%</p>
+              </div>
+            </div>
+            <div className="mt-6 rounded-2xl bg-slate-50 p-4">
+              <p className="text-xs text-slate-500">{t.common.nextAction}</p>
+              <p className="mt-1 font-medium">{opportunity.next_action ?? '—'}</p>
+              <p className="mt-1 text-sm text-slate-500">{opportunity.next_action_due_date ?? '—'}</p>
+            </div>
+            <div className="mt-6">
+              <SectionTitle title={t.opportunities.commercialFocus} />
+              <p className="text-sm text-slate-600">{opportunity.need_summary ?? '—'}</p>
+            </div>
+          </Card>
+
+          <Card className="p-6">
+            <SectionTitle title={copy.commercialPanel} />
+            <form action={updateOpportunity} className="mt-4 grid gap-4">
+              <input type="hidden" name="id" value={id} />
+              <div>
+                <label className="mb-1 block text-sm font-medium">Título</label>
+                <input name="title" defaultValue={opportunity.title} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-sm font-medium">{t.common.stage}</label>
+                  <select name="stage_id" defaultValue={opportunity.stage_id} className="w-full rounded-xl border border-slate-200 px-3 py-2.5">
+                    {(stages ?? []).map((stage: any) => <option key={stage.id} value={stage.id}>{stage.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium">{t.opportunities.expectedClose}</label>
+                  <input name="expected_close_date" type="date" defaultValue={opportunity.expected_close_date ?? ''} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                </div>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-sm font-medium">{t.common.annualValue}</label>
+                  <input name="annual_value_estimate" type="number" step="0.01" min="0" defaultValue={Number(opportunity.annual_value_estimate)} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium">{t.opportunities.valueFirst}</label>
+                  <input name="first_value_estimate" type="number" step="0.01" min="0" defaultValue={Number((opportunity as any).first_value_estimate ?? 0)} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium">{t.common.nextAction}</label>
+                <input name="next_action" defaultValue={opportunity.next_action ?? ''} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium">Fecha próxima acción</label>
+                <input name="next_action_due_date" type="date" defaultValue={opportunity.next_action_due_date ?? ''} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium">{t.opportunities.needSummary}</label>
+                <textarea name="need_summary" rows={4} defaultValue={opportunity.need_summary ?? ''} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+              </div>
+              <button className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800">{copy.saveChanges}</button>
+            </form>
+          </Card>
+
+          <Card className="p-6">
+            <SectionTitle title={copy.closePanel} description={`${copy.currentStatus}: ${opportunity.status}`} />
+            <div className="grid gap-4 lg:grid-cols-3">
+              <form action={closeOpportunity} className="space-y-3 rounded-2xl border border-emerald-200 p-4">
+                <input type="hidden" name="id" value={id} />
+                <input type="hidden" name="status" value="won" />
+                <label className="block text-sm font-medium">{copy.closeDate}</label>
+                <input name="close_date" type="date" defaultValue={opportunity.close_date ?? ''} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" required />
+                <label className="block text-sm font-medium">{copy.closeValue}</label>
+                <input name="close_value" type="number" step="0.01" min="0" defaultValue={Number(opportunity.close_value ?? opportunity.first_value_estimate ?? 0)} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" required />
+                <label className="block text-sm font-medium">{copy.wonProof}</label>
+                <input name="won_proof_type" placeholder={locale === 'es' ? 'PO / contrato / depósito' : 'PO / contract / deposit'} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" required />
+                <button className="w-full rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-700">{copy.markWon}</button>
+              </form>
+
+              <form action={closeOpportunity} className="space-y-3 rounded-2xl border border-rose-200 p-4">
+                <input type="hidden" name="id" value={id} />
+                <input type="hidden" name="status" value="lost" />
+                <label className="block text-sm font-medium">{copy.closeDate}</label>
+                <input name="close_date" type="date" defaultValue={opportunity.close_date ?? ''} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" required />
+                <label className="block text-sm font-medium">{copy.closeValue}</label>
+                <input name="close_value" type="number" step="0.01" min="0" defaultValue="0" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                <label className="block text-sm font-medium">{copy.lostReason}</label>
+                <select name="lost_reason_id" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" required>
+                  <option value="">—</option>
+                  {(lostReasons ?? []).map((reason: any) => <option key={reason.id} value={reason.id}>{reason.name}</option>)}
+                </select>
+                <button className="w-full rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-rose-700">{copy.markLost}</button>
+              </form>
+
+              <form action={closeOpportunity} className="space-y-3 rounded-2xl border border-amber-200 p-4">
+                <input type="hidden" name="id" value={id} />
+                <input type="hidden" name="status" value="on_hold" />
+                <input type="hidden" name="current_probability" value={String(opportunity.probability)} />
+                <label className="block text-sm font-medium">{copy.holdUntil}</label>
+                <input name="on_hold_until" type="date" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" required />
+                <label className="block text-sm font-medium">{copy.closeValue}</label>
+                <input name="close_value" type="number" step="0.01" min="0" defaultValue={Number(opportunity.close_value ?? 0)} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                <button className="w-full rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-amber-600">{copy.markHold}</button>
+              </form>
+            </div>
+          </Card>
+        </div>
+
+        <div className="space-y-6">
+          <Card className="p-6">
+            <SectionTitle title={copy.productsPanel} description={t.opportunities.stageChangeRule} />
+            <div className="mt-4 space-y-3">
+              {lines && lines.length > 0 ? (
+                lines.map((line: any) => (
+                  <div key={line.id} className="rounded-2xl border border-slate-200 p-4 text-sm text-slate-700">
+                    <p className="font-medium">{line.products?.name ?? line.custom_item_name ?? '—'}</p>
+                    <p className="text-slate-500">{line.quantity_estimate ?? 0} × {Number(line.unit_price_estimate ?? 0).toLocaleString()}</p>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-slate-500">{t.common.noProductsYet}</p>
+              )}
+            </div>
+            <form action={addOpportunityProduct} className="mt-5 space-y-4 border-t border-slate-200 pt-4">
+              <input type="hidden" name="opportunity_id" value={id} />
+              <div>
+                <label className="mb-1 block text-sm font-medium">{t.common.products}</label>
+                <select name="product_id" className="w-full rounded-xl border border-slate-200 px-3 py-2.5">
+                  <option value="">—</option>
+                  {(products ?? []).map((product: any) => <option key={product.id} value={product.id}>{product.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium">{copy.customItem}</label>
+                <input name="custom_item_name" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-sm font-medium">{copy.quantity}</label>
+                  <input name="quantity_estimate" type="number" step="0.01" min="0" defaultValue="1" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium">{copy.unitPrice}</label>
+                  <input name="unit_price_estimate" type="number" step="0.01" min="0" defaultValue="0" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                </div>
+              </div>
+              <button className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm hover:bg-slate-50">{copy.addLine}</button>
+            </form>
+          </Card>
+
+          <Card className="p-6">
+            <SectionTitle title={copy.docsPanel} />
+            <div className="mt-4 space-y-3">
+              {documentsWithUrls.length > 0 ? documentsWithUrls.map((document: any) => (
+                <div key={document.id} className="rounded-2xl border border-slate-200 p-4 text-sm text-slate-700">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-medium">{document.document_types?.name ?? '—'}</p>
+                    <Pill tone={document.status === 'accepted' ? 'emerald' : document.status === 'rejected' ? 'rose' : 'amber'}>{document.status}</Pill>
+                  </div>
+                  <p className="mt-2 text-slate-500">{document.request_date ?? '—'} → {document.due_date ?? '—'}</p>
+                  {document.notes ? <p className="mt-2">{document.notes}</p> : null}
+                  {document.file_name ? (
+                    <div className="mt-3 flex items-center gap-2 text-xs text-slate-500">
+                      <span>{copy.uploaded}: {document.file_name}</span>
+                      {document.signedUrl ? <a href={document.signedUrl} target="_blank" rel="noreferrer" className="font-medium text-slate-700 underline-offset-4 hover:underline">{copy.download}</a> : null}
+                    </div>
+                  ) : null}
+                </div>
+              )) : <p className="text-sm text-slate-500">{copy.noDocs}</p>}
+            </div>
+            <form action={addOpportunityDocument} className="mt-5 space-y-4 border-t border-slate-200 pt-4">
+              <input type="hidden" name="opportunity_id" value={id} />
+              <div>
+                <label className="mb-1 block text-sm font-medium">{copy.addDoc}</label>
+                <select name="document_type_id" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" required>
+                  <option value="">—</option>
+                  {(documentTypes ?? []).map((documentType: any) => <option key={documentType.id} value={documentType.id}>{documentType.name}</option>)}
+                </select>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-sm font-medium">Request date</label>
+                  <input name="request_date" type="date" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium">Due date</label>
+                  <input name="due_date" type="date" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium">Status</label>
+                <select name="status" defaultValue="requested" className="w-full rounded-xl border border-slate-200 px-3 py-2.5">
+                  {['requested', 'in_progress', 'uploaded', 'sent', 'accepted', 'rejected'].map((status) => <option key={status} value={status}>{status}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium">{copy.uploadFile}</label>
+                <input name="file" type="file" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium">{copy.details}</label>
+                <textarea name="notes" rows={3} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+              </div>
+              <button className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm hover:bg-slate-50">{copy.addDoc}</button>
+            </form>
+          </Card>
+
+          <Card className="p-6">
+            <SectionTitle title={copy.stageHistory} />
+            <div className="mt-4 space-y-3 text-sm text-slate-600">
+              {(history ?? []).length > 0 ? history!.map((entry: any) => (
+                <div key={entry.id} className="rounded-2xl border border-slate-200 p-4">
+                  <p className="font-medium">{entry.opportunity_stages?.name ?? '—'}</p>
+                  <p>{entry.changed_at?.slice(0, 10) ?? '—'} · {Number(entry.to_probability ?? 0)}%</p>
+                </div>
+              )) : <p className="text-slate-500">{copy.noHistory}</p>}
+            </div>
+          </Card>
+        </div>
+
+        <div className="space-y-6">
+          <Card className="p-6">
+            <SectionTitle title={copy.activityTimeline} />
+            <div className="mt-4 space-y-3">
+              {(activities ?? []).length > 0 ? activities!.map((activity: any) => (
+                <div key={activity.id} className="rounded-2xl border border-slate-200 p-4 text-sm text-slate-700">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-medium">{activity.summary}</p>
+                    <Pill tone="amber">{activity.activity_type}</Pill>
+                  </div>
+                  <p className="mt-2 text-slate-500">{activity.activity_at?.slice(0, 10) ?? '—'}</p>
+                  {activity.details ? <p className="mt-2">{activity.details}</p> : null}
+                  {activity.next_step ? <p className="mt-2 text-slate-500">→ {activity.next_step}</p> : null}
+                </div>
+              )) : <p className="text-sm text-slate-500">{copy.noActivities}</p>}
+            </div>
+          </Card>
+
+          <Card className="p-6">
+            <SectionTitle title={copy.followUpTasks} />
+            <div className="mt-4 space-y-3">
+              {(tasks ?? []).length > 0 ? tasks!.map((task: any) => (
+                <div key={task.id} className="rounded-2xl border border-slate-200 p-4 text-sm text-slate-700">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-medium">{task.description}</p>
+                    <Pill tone={task.status === 'completed' ? 'emerald' : task.status === 'overdue' ? 'rose' : 'amber'}>{task.status}</Pill>
+                  </div>
+                  <p className="mt-2 text-slate-500">{task.due_date ?? '—'}</p>
+                </div>
+              )) : <p className="text-sm text-slate-500">{copy.noTasks}</p>}
+            </div>
+          </Card>
+
+          <Card className="p-6">
+            <SectionTitle title={copy.addActivity} />
+            <form action={addOpportunityActivity} className="mt-4 space-y-4">
+              <input type="hidden" name="opportunity_id" value={id} />
+              <div>
+                <label className="mb-1 block text-sm font-medium">Tipo</label>
+                <select name="activity_type" className="w-full rounded-xl border border-slate-200 px-3 py-2.5">
+                  <option value="meeting">meeting</option>
+                  <option value="call">call</option>
+                  <option value="email">email</option>
+                  <option value="quote_sent">quote_sent</option>
+                  <option value="internal_note">internal_note</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium">{copy.summary}</label>
+                <input name="summary" required placeholder={locale === 'es' ? 'Ej. Cliente pidió propuesta para evento de empresa' : 'E.g. Customer asked for proposal for company event'} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium">{copy.details}</label>
+                <textarea name="details" rows={3} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium">{copy.nextStep}</label>
+                <input name="next_step" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium">{copy.nextStepDate}</label>
+                <input name="next_step_due_date" type="date" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+              </div>
+              <button className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800">{copy.addActivity}</button>
+            </form>
+            <Link href="/opportunities" className="mt-4 inline-flex rounded-xl border border-slate-200 px-4 py-2.5 text-sm hover:bg-slate-50">{t.common.back}</Link>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}

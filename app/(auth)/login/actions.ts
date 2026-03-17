@@ -6,11 +6,20 @@ import { createAdminClient } from '@/lib/supabase/admin';
 
 export async function signInWithOtp(formData: FormData): Promise<void> {
   const supabase = await createClient();
-  const admin = createAdminClient();
+
+  let admin;
+  try {
+    admin = createAdminClient();
+  } catch (err) {
+    console.error('ADMIN CLIENT INIT FAILED:', err);
+    redirect('/login?denied=1');
+  }
 
   const email = formData.get('email')?.toString().trim().toLowerCase() || '';
+  console.log('LOGIN ATTEMPT EMAIL:', email);
 
   if (!email) {
+    console.log('LOGIN DENIED: missing email');
     redirect('/login?denied=1');
   }
 
@@ -21,7 +30,10 @@ export async function signInWithOtp(formData: FormData): Promise<void> {
     .eq('is_active', true)
     .maybeSingle();
 
+  console.log('ALLOWLIST RESULT:', { allowed, allowedError });
+
   if (allowedError || !allowed) {
+    console.log('LOGIN DENIED: not allowlisted');
     redirect('/login?denied=1');
   }
 
@@ -34,6 +46,8 @@ export async function signInWithOtp(formData: FormData): Promise<void> {
       emailRedirectTo: `${siteUrl}/api/auth/callback`,
     },
   });
+
+  console.log('OTP RESULT:', { error });
 
   if (error) {
     redirect('/login?denied=1');

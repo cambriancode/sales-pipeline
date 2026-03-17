@@ -22,6 +22,12 @@ export async function signInWithOtp(formData: FormData): Promise<void> {
     console.log('LOGIN DENIED: missing email');
     redirect('/login?denied=1');
   }
+console.log('SUPABASE URL RUNTIME:', process.env.NEXT_PUBLIC_SUPABASE_URL);
+console.log('SERVICE KEY PRESENT:', Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY));
+console.log('SERVICE KEY LENGTH:', process.env.SUPABASE_SERVICE_ROLE_KEY?.length ?? 0);
+console.log('SERVICE KEY PREFIX:', process.env.SUPABASE_SERVICE_ROLE_KEY?.slice(0, 12) ?? 'none');
+
+
 
   const { data: allowed, error: allowedError } = await admin
     .from('allowed_emails')

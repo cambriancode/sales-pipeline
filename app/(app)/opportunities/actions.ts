@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from 'next/cache';
+import type { Route } from 'next';
 import { redirect } from 'next/navigation';
 import { getCurrentProfile } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
@@ -8,7 +9,7 @@ import { closeOpenTasksForOpportunity, createTaskFromNextStep, syncOpportunityFo
 import { createAdminClient } from '@/lib/supabase/admin';
 import { buildOpportunityDocumentPath, ensureOpportunityDocumentBucket } from '@/lib/document-storage';
 
-function withMessage(path: string, key: 'success' | 'error', message: string) {
+function withMessage(path: string, key: 'success' | 'error', message: string): string {
   const params = new URLSearchParams({ [key]: message });
   return `${path}?${params.toString()}`;
 }
@@ -61,7 +62,7 @@ export async function createOpportunity(formData: FormData) {
   revalidatePath('/dashboard');
   revalidatePath('/opportunities');
   revalidatePath('/tasks');
-  redirect(`/opportunities/${data.id}`);
+  redirect(`/opportunities/${data.id}` as Route);
 }
 
 export async function updateOpportunity(formData: FormData) {
@@ -70,11 +71,11 @@ export async function updateOpportunity(formData: FormData) {
 
   const supabase = await createClient();
   const id = String(formData.get('id') ?? '').trim();
-  const detailPath = `/opportunities/${id}`;
+  const detailPath = `/opportunities/${id}` as Route;
   const stageId = String(formData.get('stage_id') ?? '').trim();
 
   if (!id || !stageId) {
-    redirect(withMessage(detailPath, 'error', 'Missing required fields'));
+    redirect(withMessage(detailPath, 'error', 'Missing required fields') as Route);
   }
 
   const { data: stage } = await supabase
@@ -91,7 +92,7 @@ export async function updateOpportunity(formData: FormData) {
       .eq('opportunity_id', id);
 
     if ((count ?? 0) < 1) {
-      redirect(withMessage(detailPath, 'error', 'From stage 4 onward, at least one product or service must be linked'));
+      redirect(withMessage(detailPath, 'error', 'From stage 4 onward, at least one product or service must be linked') as Route);
     }
   }
 
@@ -110,7 +111,7 @@ export async function updateOpportunity(formData: FormData) {
 
   const { error } = await supabase.from('opportunities').update(payload).eq('id', id);
   if (error) {
-    redirect(withMessage(detailPath, 'error', error.message));
+    redirect(withMessage(detailPath, 'error', error.message) as Route);
   }
 
   await syncOpportunityFollowUpTask({
@@ -125,7 +126,7 @@ export async function updateOpportunity(formData: FormData) {
   revalidatePath('/opportunities');
   revalidatePath('/tasks');
   revalidatePath(detailPath);
-  redirect(withMessage(detailPath, 'success', 'Opportunity updated'));
+  redirect(withMessage(detailPath, 'success', 'Opportunity updated') as Route);
 }
 
 export async function addOpportunityProduct(formData: FormData) {
@@ -134,7 +135,7 @@ export async function addOpportunityProduct(formData: FormData) {
 
   const supabase = await createClient();
   const opportunityId = String(formData.get('opportunity_id') ?? '').trim();
-  const detailPath = `/opportunities/${opportunityId}`;
+  const detailPath = `/opportunities/${opportunityId}` as Route;
   const productId = String(formData.get('product_id') ?? '').trim() || null;
   const customName = String(formData.get('custom_item_name') ?? '').trim() || null;
   const quantity = Number(formData.get('quantity_estimate') ?? 0) || 0;
@@ -151,17 +152,17 @@ export async function addOpportunityProduct(formData: FormData) {
   };
 
   if (!payload.opportunity_id || (!payload.product_id && !payload.custom_item_name)) {
-    redirect(withMessage(detailPath, 'error', 'A product or custom item is required'));
+    redirect(withMessage(detailPath, 'error', 'A product or custom item is required') as Route);
   }
 
   const { error } = await supabase.from('opportunity_products').insert(payload);
   if (error) {
-    redirect(withMessage(detailPath, 'error', error.message));
+    redirect(withMessage(detailPath, 'error', error.message) as Route);
   }
 
   revalidatePath(detailPath);
   revalidatePath('/reports');
-  redirect(withMessage(detailPath, 'success', 'Product or service linked'));
+  redirect(withMessage(detailPath, 'success', 'Product or service linked') as Route);
 }
 
 export async function addOpportunityActivity(formData: FormData) {
@@ -170,7 +171,7 @@ export async function addOpportunityActivity(formData: FormData) {
 
   const supabase = await createClient();
   const opportunityId = String(formData.get('opportunity_id') ?? '').trim();
-  const detailPath = `/opportunities/${opportunityId}`;
+  const detailPath = `/opportunities/${opportunityId}` as Route;
   const summary = String(formData.get('summary') ?? '').trim() || String(formData.get('details') ?? '').trim();
   const nextStep = String(formData.get('next_step') ?? '').trim() || null;
   const nextStepDueDate = String(formData.get('next_step_due_date') ?? '').trim() || null;
@@ -185,12 +186,12 @@ export async function addOpportunityActivity(formData: FormData) {
   };
 
   if (!payload.opportunity_id || !payload.summary) {
-    redirect(withMessage(detailPath, 'error', 'Activity summary is required'));
+    redirect(withMessage(detailPath, 'error', 'Activity summary is required') as Route);
   }
 
   const { error } = await supabase.from('activities').insert(payload);
   if (error) {
-    redirect(withMessage(detailPath, 'error', error.message));
+    redirect(withMessage(detailPath, 'error', error.message) as Route);
   }
 
   if (nextStep && nextStepDueDate) {
@@ -206,7 +207,7 @@ export async function addOpportunityActivity(formData: FormData) {
   revalidatePath(detailPath);
   revalidatePath('/dashboard');
   revalidatePath('/tasks');
-  redirect(withMessage(detailPath, 'success', 'Activity added'));
+  redirect(withMessage(detailPath, 'success', 'Activity added') as Route);
 }
 
 export async function addOpportunityDocument(formData: FormData) {
@@ -215,7 +216,7 @@ export async function addOpportunityDocument(formData: FormData) {
 
   const supabase = await createClient();
   const opportunityId = String(formData.get('opportunity_id') ?? '').trim();
-  const detailPath = `/opportunities/${opportunityId}`;
+  const detailPath = `/opportunities/${opportunityId}` as Route;
   const uploadedFile = formData.get('file');
 
   const payload = {
@@ -230,7 +231,7 @@ export async function addOpportunityDocument(formData: FormData) {
   };
 
   if (!payload.opportunity_id || !payload.document_type_id) {
-    redirect(withMessage(detailPath, 'error', 'Document type is required'));
+    redirect(withMessage(detailPath, 'error', 'Document type is required') as Route);
   }
 
   const { data: inserted, error } = await supabase
@@ -240,7 +241,7 @@ export async function addOpportunityDocument(formData: FormData) {
     .single();
 
   if (error || !inserted?.id) {
-    redirect(withMessage(detailPath, 'error', error?.message ?? 'Could not create document record'));
+    redirect(withMessage(detailPath, 'error', error?.message ?? 'Could not create document record') as Route);
   }
 
   if (uploadedFile instanceof File && uploadedFile.size > 0) {
@@ -282,13 +283,13 @@ export async function addOpportunityDocument(formData: FormData) {
       }
     } catch (uploadErr) {
       const message = uploadErr instanceof Error ? uploadErr.message : 'Document upload failed';
-      redirect(withMessage(detailPath, 'error', message));
+      redirect(withMessage(detailPath, 'error', message) as Route);
     }
   }
 
   revalidatePath(detailPath);
   revalidatePath('/reports');
-  redirect(withMessage(detailPath, 'success', uploadedFile instanceof File && uploadedFile.size > 0 ? 'Document uploaded' : 'Document tracked'));
+  redirect(withMessage(detailPath, 'success', uploadedFile instanceof File && uploadedFile.size > 0 ? 'Document uploaded' : 'Document tracked') as Route);
 }
 
 export async function closeOpportunity(formData: FormData) {
@@ -297,7 +298,7 @@ export async function closeOpportunity(formData: FormData) {
 
   const supabase = await createClient();
   const opportunityId = String(formData.get('id') ?? '').trim();
-  const detailPath = `/opportunities/${opportunityId}`;
+  const detailPath = `/opportunities/${opportunityId}` as Route;
   const status = String(formData.get('status') ?? '').trim() as 'won' | 'lost' | 'on_hold';
   const closeValue = Number(formData.get('close_value') ?? 0) || 0;
 
@@ -334,7 +335,7 @@ export async function closeOpportunity(formData: FormData) {
 
   const { error } = await supabase.from('opportunities').update(payload).eq('id', opportunityId);
   if (error) {
-    redirect(withMessage(detailPath, 'error', error.message));
+    redirect(withMessage(detailPath, 'error', error.message) as Route);
   }
 
   await closeOpenTasksForOpportunity({ supabase, opportunityId });
@@ -345,5 +346,5 @@ export async function closeOpportunity(formData: FormData) {
   revalidatePath('/dashboard');
   revalidatePath('/tasks');
   revalidatePath(detailPath);
-  redirect(withMessage(detailPath, 'success', `Opportunity marked as ${status}`));
+  redirect(withMessage(detailPath, 'success', `Opportunity marked as ${status}`) as Route);
 }

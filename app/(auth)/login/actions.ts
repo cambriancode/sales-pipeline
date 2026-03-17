@@ -2,9 +2,11 @@
 
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 
 export async function signInWithOtp(formData: FormData): Promise<void> {
   const supabase = await createClient();
+  const admin = createAdminClient();
 
   const email = formData.get('email')?.toString().trim().toLowerCase() || '';
 
@@ -12,7 +14,7 @@ export async function signInWithOtp(formData: FormData): Promise<void> {
     redirect('/login?denied=1');
   }
 
-  const { data: allowed, error: allowedError } = await supabase
+  const { data: allowed, error: allowedError } = await admin
     .from('allowed_emails')
     .select('email, is_active')
     .eq('email', email)

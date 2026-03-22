@@ -14,13 +14,19 @@ export default async function ReportsPage({
   const params = (await searchParams) ?? {};
   const ownerFilter = typeof params.owner === 'string' ? params.owner : '';
   const scope = typeof params.scope === 'string' ? params.scope : 'all';
+  const today = new Date().toISOString().slice(0, 10);
 
-  const [{ data: opportunities }, { data: stages }, { data: owners }] = await Promise.all([
+  const [{ data: opportunities }, { data: stages }, { data: owners }, { data: targets }] = await Promise.all([
     supabase
       .from('opportunities')
-      .select('id, title, status, probability, annual_value_estimate, weighted_value, close_value, owner_user_id, stage_id, profiles!opportunities_owner_user_id_fkey(full_name)') ,
+      .select('id, title, status, probability, annual_value_estimate, weighted_value, close_value, owner_user_id, stage_id, profiles!opportunities_owner_user_id_fkey(full_name)'),
     supabase.from('opportunity_stages').select('id, name').order('sort_order'),
     supabase.from('profiles').select('id, full_name').order('full_name'),
+    supabase
+      .from('sales_targets')
+      .select('id, owner_user_id, period_type, period_start, period_end, won_value_target, weighted_pipeline_target, raw_pipeline_target')
+      .lte('period_start', today)
+      .gte('period_end', today),
   ]);
 
   const allRows = (opportunities ?? []).filter((item: any) => {
@@ -39,6 +45,14 @@ export default async function ReportsPage({
   const lostValue = lostRows.reduce((sum: number, item: any) => sum + Number(item.annual_value_estimate ?? 0), 0);
   const avgProbability = openRows.length > 0 ? Math.round(openRows.reduce((sum: number, item: any) => sum + Number(item.probability ?? 0), 0) / openRows.length) : 0;
 
+  const activeTargetsByOwner = new Map<string, any>();
+  for (const target of targets ?? []) {
+    const existing = activeTargetsByOwner.get(target.owner_user_id);
+    if (!existing || existing.period_end < target.period_end) {
+      activeTargetsByOwner.set(target.owner_user_id, target);
+    }
+  }
+
   const stageRows = (stages ?? []).map((stage: any) => {
     const group = openRows.filter((row: any) => row.stage_id === stage.id);
     return {
@@ -52,16 +66,24 @@ export default async function ReportsPage({
   const ownerRows = (owners ?? [])
     .map((owner: any) => {
       const group = allRows.filter((row: any) => row.owner_user_id === owner.id);
+      const openGroup = group.filter((row: any) => row.status === 'open');
+      const wonGroup = group.filter((row: any) => row.status === 'won');
+      const target = activeTargetsByOwner.get(owner.id);
+      const weighted = openGroup.reduce((sum: number, item: any) => sum + Number(item.weighted_value ?? 0), 0);
+      const wonValueByOwner = wonGroup.reduce((sum: number, item: any) => sum + Number(item.close_value ?? item.annual_value_estimate ?? 0), 0);
       return {
         id: owner.id,
         name: owner.full_name,
-        openCount: group.filter((row: any) => row.status === 'open').length,
-        wonCount: group.filter((row: any) => row.status === 'won').length,
-        weighted: group.filter((row: any) => row.status === 'open').reduce((sum: number, item: any) => sum + Number(item.weighted_value ?? 0), 0),
-        wonValue: group.filter((row: any) => row.status === 'won').reduce((sum: number, item: any) => sum + Number(item.close_value ?? item.annual_value_estimate ?? 0), 0),
+        openCount: openGroup.length,
+        wonCount: wonGroup.length,
+        weighted,
+        wonValue: wonValueByOwner,
+        target,
+        weightedPct: target && Number(target.weighted_pipeline_target ?? 0) > 0 ? Math.round((weighted / Number(target.weighted_pipeline_target)) * 100) : null,
+        wonPct: target && Number(target.won_value_target ?? 0) > 0 ? Math.round((wonValueByOwner / Number(target.won_value_target)) * 100) : null,
       };
     })
-    .filter((item) => item.openCount > 0 || item.wonCount > 0);
+    .filter((item) => item.openCount > 0 || item.wonCount > 0 || item.target);
 
   const exportParams = new URLSearchParams();
   if (ownerFilter) exportParams.set('owner', ownerFilter);
@@ -128,6 +150,13 @@ export default async function ReportsPage({
                 </div>
                 <p className="mt-2 text-sm text-slate-500">{locale === 'es' ? 'Ponderado' : 'Weighted'}: {row.weighted.toLocaleString()}</p>
                 <p className="mt-1 text-sm text-slate-500">{locale === 'es' ? 'Ganado' : 'Won value'}: {row.wonValue.toLocaleString()}</p>
+                {row.target ? (
+                  <div className="mt-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-600">
+                    <p>{locale === 'es' ? 'Meta ponderada' : 'Weighted target'}: {Number(row.target.weighted_pipeline_target ?? 0).toLocaleString()} {row.weightedPct !== null ? `· ${row.weightedPct}%` : ''}</p>
+                    <p>{locale === 'es' ? 'Meta ganada' : 'Won target'}: {Number(row.target.won_value_target ?? 0).toLocaleString()} {row.wonPct !== null ? `· ${row.wonPct}%` : ''}</p>
+                    <p>{row.target.period_start} → {row.target.period_end}</p>
+                  </div>
+                ) : null}
               </div>
             )) : <p className="text-sm text-slate-500">{t.reports.placeholder}</p>}
           </div>

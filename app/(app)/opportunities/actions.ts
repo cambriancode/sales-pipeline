@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/server';
 import { closeOpenTasksForOpportunity, createTaskFromNextStep, syncOpportunityFollowUpTask } from '@/lib/task-sync';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { buildOpportunityDocumentPath, ensureOpportunityDocumentBucket } from '@/lib/document-storage';
+import { sendScheduledActivityNotification } from '@/lib/activity-notifications';
 
 function withMessage(path: string, key: 'success' | 'error', message: string): string {
   const params = new URLSearchParams({ [key]: message });
@@ -175,6 +176,20 @@ export async function addOpportunityActivity(formData: FormData) {
   const summary = String(formData.get('summary') ?? '').trim() || String(formData.get('details') ?? '').trim();
   const nextStep = String(formData.get('next_step') ?? '').trim() || null;
   const nextStepDueDate = String(formData.get('next_step_due_date') ?? '').trim() || null;
+  const scheduledDate = String(formData.get('scheduled_date') ?? '').trim() || null;
+  const scheduledTime = String(formData.get('scheduled_time') ?? '').trim() || null;
+  const scheduledEndDate = String(formData.get('scheduled_end_date') ?? '').trim() || null;
+  const scheduledEndTime = String(formData.get('scheduled_end_time') ?? '').trim() || null;
+  const timezone = String(formData.get('timezone') ?? '').trim() || null;
+  const location = String(formData.get('location') ?? '').trim() || null;
+
+  const schedulingRequested = Boolean(
+    scheduledDate || scheduledTime || scheduledEndDate || scheduledEndTime || timezone || location,
+  );
+
+  if (schedulingRequested && (!scheduledDate || !scheduledTime || !scheduledEndDate || !scheduledEndTime)) {
+    redirect(withMessage(detailPath, 'error', 'Scheduled activities require start and end date/time') as Route);
+  }
 
   const payload = {
     opportunity_id: opportunityId,
@@ -183,31 +198,94 @@ export async function addOpportunityActivity(formData: FormData) {
     summary,
     details: String(formData.get('details') ?? '').trim() || null,
     next_step: nextStep,
+    scheduled_date: scheduledDate,
+    scheduled_time: scheduledTime,
+    scheduled_end_date: scheduledEndDate,
+    scheduled_end_time: scheduledEndTime,
+    timezone: schedulingRequested ? (timezone || 'America/Mexico_City') : null,
+    location,
   };
 
   if (!payload.opportunity_id || !payload.summary) {
     redirect(withMessage(detailPath, 'error', 'Activity summary is required') as Route);
   }
 
-  const { error } = await supabase.from('activities').insert(payload);
-  if (error) {
-    redirect(withMessage(detailPath, 'error', error.message) as Route);
+  const { data: inserted, error } = await supabase
+    .from('activities')
+    .insert(payload)
+    .select('id, calendar_uid')
+    .single();
+  if (error || !inserted) {
+    redirect(withMessage(detailPath, 'error', error?.message ?? 'Could not create activity') as Route);
   }
+
+  const { data: opportunity } = await supabase
+    .from('opportunities')
+    .select('title, owner_user_id, accounts(name), profiles!opportunities_owner_user_id_fkey(id, full_name, email, preferred_language)')
+    .eq('id', opportunityId)
+    .maybeSingle();
+
+  const ownerProfile = Array.isArray((opportunity as any)?.profiles)
+    ? (opportunity as any)?.profiles?.[0]
+    : (opportunity as any)?.profiles;
 
   if (nextStep && nextStepDueDate) {
     await createTaskFromNextStep({
       supabase,
       opportunityId,
-      ownerUserId: profile.id,
+      ownerUserId: ownerProfile?.id ?? (opportunity as any)?.owner_user_id ?? profile.id,
       description: nextStep,
       dueDate: nextStepDueDate,
     });
   }
 
+  let successMessage = 'Activity added';
+
+  if (
+    schedulingRequested
+    && inserted.calendar_uid
+    && scheduledDate
+    && scheduledTime
+    && scheduledEndDate
+    && scheduledEndTime
+    && ownerProfile?.email
+  ) {
+    const accountName = Array.isArray((opportunity as any)?.accounts)
+      ? (opportunity as any)?.accounts?.[0]?.name ?? '—'
+      : (opportunity as any)?.accounts?.name ?? '—';
+
+    const mailResult = await sendScheduledActivityNotification({
+      locale: ownerProfile?.preferred_language === 'en' ? 'en' : 'es',
+      to: ownerProfile.email,
+      managerName: ownerProfile?.full_name ?? profile.full_name,
+      opportunityTitle: (opportunity as any)?.title ?? summary,
+      accountName,
+      activitySummary: summary,
+      activityDetails: payload.details,
+      location,
+      timezone: payload.timezone ?? 'America/Mexico_City',
+      startDate: scheduledDate,
+      startTime: scheduledTime,
+      endDate: scheduledEndDate,
+      endTime: scheduledEndTime,
+      uid: inserted.calendar_uid,
+    });
+
+    if (mailResult.delivered) {
+      await supabase
+        .from('activities')
+        .update({ notification_sent_at: new Date().toISOString() })
+        .eq('id', inserted.id);
+      successMessage = 'Activity added and emailed';
+    } else {
+      successMessage = 'Activity added. SMTP not configured in the app runtime yet';
+    }
+  }
+
   revalidatePath(detailPath);
   revalidatePath('/dashboard');
   revalidatePath('/tasks');
-  redirect(withMessage(detailPath, 'success', 'Activity added') as Route);
+  redirect(withMessage(detailPath, 'success', successMessage) as Route);
 }
 
 export async function addOpportunityDocument(formData: FormData) {

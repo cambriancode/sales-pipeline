@@ -180,7 +180,7 @@ export default async function OpportunityDetailPage({
     canViewPrivatePanels
       ? supabase
           .from('activities')
-          .select('id, activity_type, summary, details, next_step, activity_at')
+          .select('id, activity_type, summary, details, next_step, activity_at, scheduled_date, scheduled_time, scheduled_end_date, scheduled_end_time, timezone, location, calendar_uid, notification_sent_at')
           .eq('opportunity_id', id)
           .order('activity_at', { ascending: false })
           .limit(10)
@@ -258,6 +258,13 @@ export default async function OpportunityDetailPage({
     followUpTasks: locale === 'es' ? 'Tareas vinculadas' : 'Linked tasks',
     noTasks: locale === 'es' ? 'Sin tareas vinculadas todavía.' : 'No linked tasks yet.',
     docsPanel: locale === 'es' ? 'Pipeline documental' : 'Document pipeline',
+    scheduleStart: locale === 'es' ? 'Inicio programado' : 'Scheduled start',
+    scheduleEnd: locale === 'es' ? 'Fin programado' : 'Scheduled end',
+    timezone: locale === 'es' ? 'Zona horaria' : 'Time zone',
+    location: locale === 'es' ? 'Ubicación' : 'Location',
+    calendarDownload: locale === 'es' ? 'Descargar .ics' : 'Download .ics',
+    emailSent: locale === 'es' ? 'Email enviado al responsable' : 'Email sent to owner',
+    emailPending: locale === 'es' ? 'Email pendiente / SMTP no configurado' : 'Email pending / SMTP not configured',
     addDoc: locale === 'es' ? 'Registrar documento' : 'Track document',
     uploadFile: locale === 'es' ? 'Adjuntar archivo' : 'Attach file',
     uploaded: locale === 'es' ? 'Archivo cargado' : 'File uploaded',
@@ -584,6 +591,18 @@ export default async function OpportunityDetailPage({
                       <Pill tone="amber">{activity.activity_type}</Pill>
                     </div>
                     <p className="mt-2 text-slate-500">{activity.activity_at?.slice(0, 10) ?? '—'}</p>
+                    {activity.scheduled_date && activity.scheduled_time ? (
+                      <div className="mt-2 rounded-xl bg-slate-50 p-3 text-xs text-slate-600">
+                        <p><span className="font-medium">{copy.scheduleStart}:</span> {activity.scheduled_date} {String(activity.scheduled_time).slice(0, 5)}</p>
+                        <p><span className="font-medium">{copy.scheduleEnd}:</span> {activity.scheduled_end_date ?? '—'} {activity.scheduled_end_time ? String(activity.scheduled_end_time).slice(0, 5) : '—'}</p>
+                        <p><span className="font-medium">{copy.timezone}:</span> {activity.timezone ?? 'America/Mexico_City'}</p>
+                        {activity.location ? <p><span className="font-medium">{copy.location}:</span> {activity.location}</p> : null}
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <a href={`/api/activities/${activity.id}/calendar`} className="font-medium text-slate-700 underline-offset-4 hover:underline">{copy.calendarDownload}</a>
+                          <Pill tone={activity.notification_sent_at ? 'emerald' : 'amber'}>{activity.notification_sent_at ? copy.emailSent : copy.emailPending}</Pill>
+                        </div>
+                      </div>
+                    ) : null}
                     {activity.details ? <p className="mt-2">{activity.details}</p> : null}
                     {activity.next_step ? <p className="mt-2 text-slate-500">→ {activity.next_step}</p> : null}
                   </div>
@@ -644,6 +663,33 @@ export default async function OpportunityDetailPage({
                   <label className="mb-1 block text-sm font-medium">{copy.nextStepDate}</label>
                   <input name="next_step_due_date" type="date" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
                 </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium">{copy.scheduleStart}</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input name="scheduled_date" type="date" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                      <input name="scheduled_time" type="time" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium">{copy.scheduleEnd}</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input name="scheduled_end_date" type="date" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                      <input name="scheduled_end_time" type="time" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                    </div>
+                  </div>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium">{copy.timezone}</label>
+                    <input name="timezone" defaultValue="America/Mexico_City" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium">{copy.location}</label>
+                    <input name="location" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                  </div>
+                </div>
+                <p className="text-xs text-slate-500">{locale === 'es' ? 'Si capturas un horario completo, el sistema intentará enviar un email al responsable con un archivo .ics.' : 'If you provide a full schedule, the system will try to email the owner with an .ics file.'}</p>
                 <button className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800">{copy.addActivity}</button>
               </form>
               <Link href="/opportunities" className="mt-4 inline-flex rounded-xl border border-slate-200 px-4 py-2.5 text-sm hover:bg-slate-50">{t.common.back}</Link>

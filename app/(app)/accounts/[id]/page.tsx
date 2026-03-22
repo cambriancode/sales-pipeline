@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Card, Pill, SectionTitle } from '@/components/ui';
 import { PageHeader } from '@/components/page-header';
+import { getCurrentProfile } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { createContact } from '../actions';
 import { getI18n } from '@/lib/i18n';
@@ -9,28 +10,57 @@ import { getI18n } from '@/lib/i18n';
 export default async function AccountDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = await createClient();
+  const profile = await getCurrentProfile();
   const { locale } = await getI18n();
 
-  const [{ data: account }, { data: contacts }, { data: opportunities }] = await Promise.all([
-    supabase
-      .from('accounts')
-      .select('id, name, legal_name, billing_city, billing_country, notes, account_types(name)')
-      .eq('id', id)
-      .maybeSingle(),
-    supabase
-      .from('contacts')
-      .select('id, full_name, job_title, email, phone, is_decision_maker')
-      .eq('account_id', id)
-      .order('created_at', { ascending: false }),
+  const { data: account } = await supabase
+    .from('accounts')
+    .select('id, name, legal_name, billing_city, billing_country, notes, created_by_user_id, account_types(name)')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (!account) notFound();
+
+  const { count: linkedOwnedOpportunityCount } = profile?.role === 'account_manager'
+    ? await supabase
+        .from('opportunities')
+        .select('id', { count: 'exact', head: true })
+        .eq('account_id', id)
+        .eq('owner_user_id', profile.id)
+    : { count: 0 };
+
+  const canManageAccount = Boolean(
+    profile && (
+      profile.role === 'admin'
+      || (
+        profile.role === 'account_manager'
+        && (
+          account.created_by_user_id === profile.id
+          || (linkedOwnedOpportunityCount ?? 0) > 0
+        )
+      )
+    )
+  );
+
+  const canViewPrivateAccountFields = Boolean(
+    profile && (profile.role === 'admin' || profile.role === 'finance_supervisor' || canManageAccount)
+  );
+
+  const [{ data: contacts }, { data: opportunities }] = await Promise.all([
+    canViewPrivateAccountFields
+      ? supabase
+          .from('contacts')
+          .select('id, full_name, job_title, email, phone, is_decision_maker')
+          .eq('account_id', id)
+          .order('created_at', { ascending: false })
+      : Promise.resolve({ data: [] as any[] }),
     supabase
       .from('opportunities')
-      .select('id, title, probability, weighted_value, opportunity_stages(name)')
+      .select('id, title, status, probability, weighted_value, opportunity_stages(name)')
       .eq('account_id', id)
       .order('created_at', { ascending: false })
       .limit(8),
   ]);
-
-  if (!account) notFound();
 
   const copy = {
     overview: locale === 'es' ? 'Resumen de cuenta' : 'Account overview',
@@ -51,16 +81,32 @@ export default async function AccountDetailPage({ params }: { params: Promise<{ 
     notes: locale === 'es' ? 'Notas' : 'Notes',
     stage: locale === 'es' ? 'Etapa' : 'Stage',
     weighted: locale === 'es' ? 'Ponderado' : 'Weighted',
+    status: locale === 'es' ? 'Estatus' : 'Status',
+    privateFieldsNotice: locale === 'es'
+      ? 'Los datos sensibles de cuenta (notas y contactos) sólo se muestran al responsable, finanzas o admins.'
+      : 'Sensitive account details (notes and contacts) are only visible to the owner, finance, or admins.',
+    readOnlyNotice: locale === 'es'
+      ? 'Esta cuenta ahora es visible para todo el equipo en modo consulta.'
+      : 'This account is now visible to the full team in read-only mode.',
   };
 
   return (
     <div className="space-y-8">
-      <PageHeader title={account.name} description={locale === 'es' ? 'Ficha de cuenta con contactos y oportunidades.' : 'Account record with contacts and opportunities.'} />
+      <PageHeader title={account.name} description={locale === 'es' ? 'Ficha de cuenta con oportunidades compartidas y detalles privados protegidos.' : 'Account record with shared opportunity visibility and protected private details.'} />
+
+      {!canManageAccount ? (
+        <Card className="border-sky-200 bg-sky-50 p-4 text-sm text-sky-900">{copy.readOnlyNotice}</Card>
+      ) : null}
 
       <div className="grid gap-6 lg:grid-cols-[1.15fr,0.85fr]">
         <div className="space-y-6">
           <Card className="p-6">
-            <SectionTitle title={copy.overview} action={<Link href={`/opportunities/new?accountId=${account.id}`} className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800">{copy.createOpportunity}</Link>} />
+            <SectionTitle
+              title={copy.overview}
+              action={canManageAccount ? (
+                <Link href={`/opportunities/new?accountId=${account.id}`} className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800">{copy.createOpportunity}</Link>
+              ) : undefined}
+            />
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               <div>
                 <p className="text-xs text-slate-500">{copy.legalName}</p>
@@ -77,7 +123,11 @@ export default async function AccountDetailPage({ params }: { params: Promise<{ 
             </div>
             <div className="mt-4 rounded-2xl bg-slate-50 p-4">
               <p className="text-xs text-slate-500">{copy.notes}</p>
-              <p className="mt-1 text-sm text-slate-700">{account.notes ?? '—'}</p>
+              {canViewPrivateAccountFields ? (
+                <p className="mt-1 text-sm text-slate-700">{account.notes ?? '—'}</p>
+              ) : (
+                <p className="mt-1 text-sm text-slate-600">{copy.privateFieldsNotice}</p>
+              )}
             </div>
           </Card>
 
@@ -90,8 +140,9 @@ export default async function AccountDetailPage({ params }: { params: Promise<{ 
                     <div>
                       <p className="font-medium">{opportunity.title}</p>
                       <p className="text-sm text-slate-500">{copy.stage}: {opportunity.opportunity_stages?.name ?? '—'}</p>
+                      <p className="mt-1 text-sm text-slate-500">{copy.status}: {opportunity.status}</p>
                     </div>
-                    <Pill tone={Number(opportunity.probability) >= 60 ? 'sky' : 'amber'}>{Number(opportunity.weighted_value).toLocaleString()}</Pill>
+                    <Pill tone={Number(opportunity.probability) >= 60 ? 'sky' : opportunity.status === 'won' ? 'emerald' : opportunity.status === 'lost' ? 'rose' : 'amber'}>{Number(opportunity.weighted_value).toLocaleString()}</Pill>
                   </div>
                 </Link>
               )) : <p className="text-sm text-slate-500">{copy.noOpps}</p>}
@@ -102,52 +153,58 @@ export default async function AccountDetailPage({ params }: { params: Promise<{ 
         <div className="space-y-6">
           <Card className="p-6">
             <SectionTitle title={copy.contacts} />
-            <div className="mt-4 space-y-3">
-              {(contacts ?? []).length > 0 ? contacts!.map((contact: any) => (
-                <div key={contact.id} className="rounded-2xl border border-slate-200 p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-medium">{contact.full_name}</p>
-                      <p className="text-sm text-slate-500">{contact.job_title ?? '—'}</p>
+            {canViewPrivateAccountFields ? (
+              <div className="mt-4 space-y-3">
+                {(contacts ?? []).length > 0 ? contacts!.map((contact: any) => (
+                  <div key={contact.id} className="rounded-2xl border border-slate-200 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-medium">{contact.full_name}</p>
+                        <p className="text-sm text-slate-500">{contact.job_title ?? '—'}</p>
+                      </div>
+                      {contact.is_decision_maker ? <Pill tone="emerald">{copy.decisionMaker}</Pill> : null}
                     </div>
-                    {contact.is_decision_maker ? <Pill tone="emerald">{copy.decisionMaker}</Pill> : null}
+                    <div className="mt-2 text-sm text-slate-600">
+                      <p>{contact.email ?? '—'}</p>
+                      <p>{contact.phone ?? '—'}</p>
+                    </div>
                   </div>
-                  <div className="mt-2 text-sm text-slate-600">
-                    <p>{contact.email ?? '—'}</p>
-                    <p>{contact.phone ?? '—'}</p>
-                  </div>
-                </div>
-              )) : <p className="text-sm text-slate-500">{copy.noContacts}</p>}
-            </div>
+                )) : <p className="text-sm text-slate-500">{copy.noContacts}</p>}
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-slate-600">{copy.privateFieldsNotice}</p>
+            )}
           </Card>
 
-          <Card className="p-6">
-            <SectionTitle title={copy.addContact} />
-            <form action={createContact} className="mt-4 space-y-4">
-              <input type="hidden" name="account_id" value={account.id} />
-              <div>
-                <label className="mb-1 block text-sm font-medium">{copy.contactName}</label>
-                <input name="full_name" required className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium">{copy.title}</label>
-                <input name="job_title" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium">{copy.email}</label>
-                <input name="email" type="email" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium">{copy.phone}</label>
-                <input name="phone" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
-              </div>
-              <label className="flex items-center gap-2 text-sm text-slate-600">
-                <input type="checkbox" name="is_decision_maker" />
-                {copy.decisionMaker}
-              </label>
-              <button className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800">{copy.save}</button>
-            </form>
-          </Card>
+          {canManageAccount ? (
+            <Card className="p-6">
+              <SectionTitle title={copy.addContact} />
+              <form action={createContact} className="mt-4 space-y-4">
+                <input type="hidden" name="account_id" value={account.id} />
+                <div>
+                  <label className="mb-1 block text-sm font-medium">{copy.contactName}</label>
+                  <input name="full_name" required className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium">{copy.title}</label>
+                  <input name="job_title" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium">{copy.email}</label>
+                  <input name="email" type="email" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium">{copy.phone}</label>
+                  <input name="phone" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                </div>
+                <label className="flex items-center gap-2 text-sm text-slate-600">
+                  <input type="checkbox" name="is_decision_maker" />
+                  {copy.decisionMaker}
+                </label>
+                <button className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800">{copy.save}</button>
+              </form>
+            </Card>
+          ) : null}
         </div>
       </div>
     </div>

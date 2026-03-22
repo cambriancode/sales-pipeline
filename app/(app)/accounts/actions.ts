@@ -19,7 +19,6 @@ export async function createAccount(formData: FormData) {
     billing_country: String(formData.get('billing_country') ?? '').trim() || null,
     notes: String(formData.get('notes') ?? '').trim() || null,
     created_by_user_id: profile.id,
-    account_owner_user_id: profile.id,
   };
 
   if (!payload.name) throw new Error('Name is required');

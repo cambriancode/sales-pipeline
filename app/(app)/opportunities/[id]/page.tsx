@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Card, Pill, SectionTitle } from '@/components/ui';
 import { PageHeader } from '@/components/page-header';
+import { getCurrentProfile } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { OPPORTUNITY_DOCUMENT_BUCKET } from '@/lib/document-storage';
@@ -94,65 +95,32 @@ export default async function OpportunityDetailPage({
   }
 
   const supabase = await createClient();
-  const [{ data: opportunity }, { data: lines }, { data: products }, { data: stages }, { data: activities }, { data: history }, { data: tasks }, { data: documentTypes }, { data: documents }, { data: lostReasons }] = await Promise.all([
-    supabase
-      .from('opportunities')
-      .select(`
-        id,
-        title,
-        status,
-        probability,
-        annual_value_estimate,
-        first_value_estimate,
-        weighted_value,
-        expected_close_date,
-        next_action,
-        next_action_due_date,
-        need_summary,
-        account_id,
-        stage_id,
-        close_date,
-        close_value,
-        accounts(name),
-        opportunity_stages(name),
-        opportunity_types(name)
-      `)
-      .eq('id', id)
-      .maybeSingle(),
-    supabase
-      .from('opportunity_products')
-      .select('id, custom_item_name, quantity_estimate, unit_price_estimate, products(name)')
-      .eq('opportunity_id', id)
-      .order('created_at', { ascending: false }),
-    supabase.from('products').select('id, name').order('name'),
-    supabase.from('opportunity_stages').select('id, name').order('sort_order'),
-    supabase
-      .from('activities')
-      .select('id, activity_type, summary, details, next_step, activity_at')
-      .eq('opportunity_id', id)
-      .order('activity_at', { ascending: false })
-      .limit(10),
-    supabase
-      .from('opportunity_stage_history')
-      .select('id, changed_at, to_probability, opportunity_stages!opportunity_stage_history_to_stage_id_fkey(name)')
-      .eq('opportunity_id', id)
-      .order('changed_at', { ascending: false })
-      .limit(10),
-    supabase
-      .from('tasks')
-      .select('id, description, due_date, status')
-      .eq('opportunity_id', id)
-      .order('due_date', { ascending: true })
-      .limit(10),
-    supabase.from('document_types').select('id, name').order('sort_order'),
-    supabase
-      .from('documents')
-      .select('id, request_date, due_date, status, notes, file_path, file_name, uploaded_at, document_types(name)')
-      .eq('opportunity_id', id)
-      .order('created_at', { ascending: false })
-      .limit(10),
-    supabase.from('lost_reasons').select('id, name').order('sort_order'),
-  ]);
+  const profile = await getCurrentProfile();
+  const { data: opportunity } = await supabase
+    .from('opportunities')
+    .select(`
+      id,
+      title,
+      status,
+      owner_user_id,
+      probability,
+      annual_value_estimate,
+      first_value_estimate,
+      weighted_value,
+      expected_close_date,
+      next_action,
+      next_action_due_date,
+      need_summary,
+      account_id,
+      stage_id,
+      close_date,
+      close_value,
+      accounts(name),
+      opportunity_stages(name),
+      opportunity_types(name)
+    `)
+    .eq('id', id)
+    .maybeSingle();
 
   if (!opportunity) notFound();
 
@@ -169,25 +137,106 @@ export default async function OpportunityDetailPage({
   const accountName = relationName((opportunity as any).accounts);
   const stageName = relationName((opportunity as any).opportunity_stages);
   const typeName = relationName((opportunity as any).opportunity_types);
-
-  const documentsWithUrls = await Promise.all(
-    (documents ?? []).map(async (document: any) => {
-      if (!document.file_path) {
-        return { ...document, signedUrl: null };
-      }
-
-      try {
-        const admin = createAdminClient();
-        const { data } = await admin.storage
-          .from(OPPORTUNITY_DOCUMENT_BUCKET)
-          .createSignedUrl(document.file_path, 60 * 15);
-
-        return { ...document, signedUrl: data?.signedUrl ?? null };
-      } catch {
-        return { ...document, signedUrl: null };
-      }
-    })
+  const canManageOpportunity = Boolean(
+    profile && (
+      profile.role === 'admin'
+      || (
+        profile.role === 'account_manager'
+        && opportunity.owner_user_id === profile.id
+        && opportunity.status === 'open'
+      )
+    )
   );
+  const canViewPrivatePanels = Boolean(
+    profile && (
+      profile.role === 'admin'
+      || profile.role === 'finance_supervisor'
+      || opportunity.owner_user_id === profile.id
+    )
+  );
+
+  const [
+    { data: lines },
+    { data: products },
+    { data: stages },
+    { data: activities },
+    { data: history },
+    { data: tasks },
+    { data: documentTypes },
+    { data: documents },
+    { data: lostReasons },
+  ] = await Promise.all([
+    supabase
+      .from('opportunity_products')
+      .select('id, custom_item_name, quantity_estimate, unit_price_estimate, products(name)')
+      .eq('opportunity_id', id)
+      .order('created_at', { ascending: false }),
+    canManageOpportunity
+      ? supabase.from('products').select('id, name').order('name')
+      : Promise.resolve({ data: [] as any[] }),
+    canManageOpportunity
+      ? supabase.from('opportunity_stages').select('id, name').order('sort_order')
+      : Promise.resolve({ data: [] as any[] }),
+    canViewPrivatePanels
+      ? supabase
+          .from('activities')
+          .select('id, activity_type, summary, details, next_step, activity_at')
+          .eq('opportunity_id', id)
+          .order('activity_at', { ascending: false })
+          .limit(10)
+      : Promise.resolve({ data: [] as any[] }),
+    canViewPrivatePanels
+      ? supabase
+          .from('opportunity_stage_history')
+          .select('id, changed_at, to_probability, opportunity_stages!opportunity_stage_history_to_stage_id_fkey(name)')
+          .eq('opportunity_id', id)
+          .order('changed_at', { ascending: false })
+          .limit(10)
+      : Promise.resolve({ data: [] as any[] }),
+    canViewPrivatePanels
+      ? supabase
+          .from('tasks')
+          .select('id, description, due_date, status')
+          .eq('opportunity_id', id)
+          .order('due_date', { ascending: true })
+          .limit(10)
+      : Promise.resolve({ data: [] as any[] }),
+    canManageOpportunity
+      ? supabase.from('document_types').select('id, name').order('sort_order')
+      : Promise.resolve({ data: [] as any[] }),
+    canViewPrivatePanels
+      ? supabase
+          .from('documents')
+          .select('id, request_date, due_date, status, notes, file_path, file_name, uploaded_at, document_types(name)')
+          .eq('opportunity_id', id)
+          .order('created_at', { ascending: false })
+          .limit(10)
+      : Promise.resolve({ data: [] as any[] }),
+    canManageOpportunity
+      ? supabase.from('lost_reasons').select('id, name').order('sort_order')
+      : Promise.resolve({ data: [] as any[] }),
+  ]);
+
+  const documentsWithUrls = canViewPrivatePanels
+    ? await Promise.all(
+        (documents ?? []).map(async (document: any) => {
+          if (!document.file_path) {
+            return { ...document, signedUrl: null };
+          }
+
+          try {
+            const admin = createAdminClient();
+            const { data } = await admin.storage
+              .from(OPPORTUNITY_DOCUMENT_BUCKET)
+              .createSignedUrl(document.file_path, 60 * 15);
+
+            return { ...document, signedUrl: data?.signedUrl ?? null };
+          } catch {
+            return { ...document, signedUrl: null };
+          }
+        })
+      )
+    : [];
 
   const copy = {
     commercialPanel: locale === 'es' ? 'Editar oportunidad' : 'Edit opportunity',
@@ -223,28 +272,47 @@ export default async function OpportunityDetailPage({
     markWon: locale === 'es' ? 'Marcar ganada' : 'Mark won',
     markLost: locale === 'es' ? 'Marcar perdida' : 'Mark lost',
     markHold: locale === 'es' ? 'Poner en pausa' : 'Put on hold',
-    currentStatus: locale === 'es' ? 'Estado actual' : 'Current status',
+    currentStatus: locale === 'es' ? 'Estatus actual' : 'Current status',
+    readOnlyNotice: locale === 'es'
+      ? 'Esta oportunidad está visible para todo el equipo en modo consulta.'
+      : 'This opportunity is visible to the full team in read-only mode.',
+    lockedNotice: locale === 'es'
+      ? 'Las oportunidades cerradas quedan bloqueadas para account managers. Sólo admins pueden corregirlas.'
+      : 'Closed opportunities are locked for account managers. Only admins can correct them.',
+    privatePanelsNotice: locale === 'es'
+      ? 'El historial comercial, tareas y documentos siguen protegidos para el responsable, finanzas o admins.'
+      : 'Commercial history, tasks, and documents remain protected for the owner, finance, or admins.',
+    stageSummary: locale === 'es' ? 'Resumen actual' : 'Current summary',
+    status: locale === 'es' ? 'Estatus' : 'Status',
   };
+
+  const readOnlyMessage = canManageOpportunity
+    ? null
+    : opportunity.status !== 'open' && opportunity.owner_user_id === profile?.id
+      ? copy.lockedNotice
+      : copy.readOnlyNotice;
 
   return (
     <div className="space-y-8">
       <PageHeader title={opportunity.title} description={t.opportunities.detailDescription} />
+
       {resolvedSearchParams.success ? <Notice type="success" message={resolvedSearchParams.success} /> : null}
       {resolvedSearchParams.error ? <Notice type="error" message={resolvedSearchParams.error} /> : null}
-      <div className="grid gap-6 xl:grid-cols-[1.1fr,0.9fr,0.8fr]">
-        <div className="space-y-6">
+      {readOnlyMessage ? <Card className="border-sky-200 bg-sky-50 p-4 text-sm text-sky-900">{readOnlyMessage}</Card> : null}
+      {!canViewPrivatePanels ? <Card className="border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">{copy.privatePanelsNotice}</Card> : null}
+
+      <div className="grid gap-6 lg:grid-cols-[1.35fr,0.95fr,0.95fr]">
+        <div className="space-y-6 lg:col-span-1">
           <Card className="p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-sm text-slate-500">{accountName}</p>
                 <h2 className="mt-1 text-2xl font-semibold">{opportunity.title}</h2>
+                <p className="mt-2 text-sm text-slate-500">{copy.status}: {opportunity.status}</p>
               </div>
-              <div className="flex flex-col items-end gap-2">
-                <Pill tone={opportunity.status === 'won' ? 'emerald' : opportunity.status === 'lost' ? 'rose' : opportunity.status === 'on_hold' ? 'amber' : Number(opportunity.probability) >= 60 ? 'sky' : 'amber'}>
-                  {stageName}
-                </Pill>
-                <Pill tone={opportunity.status === 'won' ? 'emerald' : opportunity.status === 'lost' ? 'rose' : opportunity.status === 'on_hold' ? 'amber' : 'slate'}>{opportunity.status}</Pill>
-              </div>
+              <Pill tone={opportunity.status === 'won' ? 'emerald' : opportunity.status === 'lost' ? 'rose' : Number(opportunity.probability) >= 60 ? 'sky' : 'amber'}>
+                {stageName}
+              </Pill>
             </div>
             <div className="mt-6 grid gap-4 md:grid-cols-3">
               <div>
@@ -256,8 +324,8 @@ export default async function OpportunityDetailPage({
                 <p className="font-semibold">{Number(opportunity.weighted_value).toLocaleString()}</p>
               </div>
               <div>
-                <p className="text-xs text-slate-500">{t.opportunities.probability}</p>
-                <p className="font-semibold">{Number(opportunity.probability)}%</p>
+                <p className="text-xs text-slate-500">{t.common.stage}</p>
+                <p className="font-semibold">{stageName}</p>
               </div>
             </div>
             <div className="mt-6 rounded-2xl bg-slate-50 p-4">
@@ -266,102 +334,119 @@ export default async function OpportunityDetailPage({
               <p className="mt-1 text-sm text-slate-500">{opportunity.next_action_due_date ?? '—'}</p>
             </div>
             <div className="mt-6">
-              <SectionTitle title={t.opportunities.commercialFocus} />
-              <p className="text-sm text-slate-600">{opportunity.need_summary ?? '—'}</p>
+              <SectionTitle title={copy.stageSummary} />
+              <div className="mt-3 grid gap-3 rounded-2xl border border-slate-200 p-4 text-sm text-slate-700">
+                <div>
+                  <p className="text-xs text-slate-500">{t.opportunities.type}</p>
+                  <p className="font-medium">{typeName}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">{t.opportunities.expectedClose}</p>
+                  <p className="font-medium">{opportunity.expected_close_date ?? '—'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">{t.opportunities.needSummary}</p>
+                  <p className="font-medium whitespace-pre-wrap">{opportunity.need_summary ?? '—'}</p>
+                </div>
+              </div>
             </div>
           </Card>
 
-          <Card className="p-6">
-            <SectionTitle title={copy.commercialPanel} />
-            <form action={updateOpportunity} className="mt-4 grid gap-4">
-              <input type="hidden" name="id" value={id} />
-              <div>
-                <label className="mb-1 block text-sm font-medium">Título</label>
-                <input name="title" defaultValue={opportunity.title} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
-              </div>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                  <label className="mb-1 block text-sm font-medium">{t.common.stage}</label>
-                  <select name="stage_id" defaultValue={opportunity.stage_id} className="w-full rounded-xl border border-slate-200 px-3 py-2.5">
-                    {(stages ?? []).map((stage: any) => <option key={stage.id} value={stage.id}>{stage.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium">{t.opportunities.expectedClose}</label>
-                  <input name="expected_close_date" type="date" defaultValue={opportunity.expected_close_date ?? ''} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
-                </div>
-              </div>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                  <label className="mb-1 block text-sm font-medium">{t.common.annualValue}</label>
-                  <input name="annual_value_estimate" type="number" step="0.01" min="0" defaultValue={Number(opportunity.annual_value_estimate)} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium">{t.opportunities.valueFirst}</label>
-                  <input name="first_value_estimate" type="number" step="0.01" min="0" defaultValue={Number((opportunity as any).first_value_estimate ?? 0)} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
-                </div>
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium">{t.common.nextAction}</label>
-                <input name="next_action" defaultValue={opportunity.next_action ?? ''} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium">Fecha próxima acción</label>
-                <input name="next_action_due_date" type="date" defaultValue={opportunity.next_action_due_date ?? ''} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium">{t.opportunities.needSummary}</label>
-                <textarea name="need_summary" rows={4} defaultValue={opportunity.need_summary ?? ''} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
-              </div>
-              <button className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800">{copy.saveChanges}</button>
-            </form>
-          </Card>
+          {canManageOpportunity ? (
+            <>
+              <Card className="p-6">
+                <SectionTitle title={copy.commercialPanel} description={t.opportunities.description} />
+                <form action={updateOpportunity} className="mt-4 space-y-4">
+                  <input type="hidden" name="id" value={id} />
+                  <div>
+                    <label className="mb-1 block text-sm font-medium">{locale === 'es' ? 'Título' : 'Title'}</label>
+                    <input name="title" defaultValue={opportunity.title} required className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">{t.common.stage}</label>
+                      <select name="stage_id" defaultValue={opportunity.stage_id} className="w-full rounded-xl border border-slate-200 px-3 py-2.5">
+                        {(stages ?? []).map((stage: any) => <option key={stage.id} value={stage.id}>{stage.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">{t.opportunities.expectedClose}</label>
+                      <input name="expected_close_date" type="date" defaultValue={opportunity.expected_close_date ?? ''} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                    </div>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">{t.common.annualValue}</label>
+                      <input name="annual_value_estimate" type="number" step="0.01" min="0" defaultValue={Number(opportunity.annual_value_estimate)} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">{t.opportunities.valueFirst}</label>
+                      <input name="first_value_estimate" type="number" step="0.01" min="0" defaultValue={Number((opportunity as any).first_value_estimate ?? 0)} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium">{t.common.nextAction}</label>
+                    <input name="next_action" defaultValue={opportunity.next_action ?? ''} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium">Fecha próxima acción</label>
+                    <input name="next_action_due_date" type="date" defaultValue={opportunity.next_action_due_date ?? ''} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium">{t.opportunities.needSummary}</label>
+                    <textarea name="need_summary" rows={4} defaultValue={opportunity.need_summary ?? ''} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                  </div>
+                  <button className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800">{copy.saveChanges}</button>
+                </form>
+              </Card>
 
-          <Card className="p-6">
-            <SectionTitle title={copy.closePanel} description={`${copy.currentStatus}: ${opportunity.status}`} />
-            <div className="grid gap-4 lg:grid-cols-3">
-              <form action={closeOpportunity} className="space-y-3 rounded-2xl border border-emerald-200 p-4">
-                <input type="hidden" name="id" value={id} />
-                <input type="hidden" name="status" value="won" />
-                <label className="block text-sm font-medium">{copy.closeDate}</label>
-                <input name="close_date" type="date" defaultValue={opportunity.close_date ?? ''} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" required />
-                <label className="block text-sm font-medium">{copy.closeValue}</label>
-                <input name="close_value" type="number" step="0.01" min="0" defaultValue={Number(opportunity.close_value ?? opportunity.first_value_estimate ?? 0)} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" required />
-                <label className="block text-sm font-medium">{copy.wonProof}</label>
-                <input name="won_proof_type" placeholder={locale === 'es' ? 'PO / contrato / depósito' : 'PO / contract / deposit'} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" required />
-                <button className="w-full rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-700">{copy.markWon}</button>
-              </form>
+              <Card className="p-6">
+                <SectionTitle title={copy.closePanel} description={`${copy.currentStatus}: ${opportunity.status}`} />
+                <div className="grid gap-4 lg:grid-cols-3">
+                  <form action={closeOpportunity} className="space-y-3 rounded-2xl border border-emerald-200 p-4">
+                    <input type="hidden" name="id" value={id} />
+                    <input type="hidden" name="status" value="won" />
+                    <label className="block text-sm font-medium">{copy.closeDate}</label>
+                    <input name="close_date" type="date" defaultValue={opportunity.close_date ?? ''} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" required />
+                    <label className="block text-sm font-medium">{copy.closeValue}</label>
+                    <input name="close_value" type="number" step="0.01" min="0" defaultValue={Number(opportunity.close_value ?? (opportunity as any).first_value_estimate ?? 0)} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" required />
+                    <label className="block text-sm font-medium">{copy.wonProof}</label>
+                    <input name="won_proof_type" placeholder={locale === 'es' ? 'PO / contrato / depósito' : 'PO / contract / deposit'} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" required />
+                    <button className="w-full rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-700">{copy.markWon}</button>
+                  </form>
 
-              <form action={closeOpportunity} className="space-y-3 rounded-2xl border border-rose-200 p-4">
-                <input type="hidden" name="id" value={id} />
-                <input type="hidden" name="status" value="lost" />
-                <label className="block text-sm font-medium">{copy.closeDate}</label>
-                <input name="close_date" type="date" defaultValue={opportunity.close_date ?? ''} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" required />
-                <label className="block text-sm font-medium">{copy.closeValue}</label>
-                <input name="close_value" type="number" step="0.01" min="0" defaultValue="0" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
-                <label className="block text-sm font-medium">{copy.lostReason}</label>
-                <select name="lost_reason_id" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" required>
-                  <option value="">—</option>
-                  {(lostReasons ?? []).map((reason: any) => <option key={reason.id} value={reason.id}>{reason.name}</option>)}
-                </select>
-                <button className="w-full rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-rose-700">{copy.markLost}</button>
-              </form>
+                  <form action={closeOpportunity} className="space-y-3 rounded-2xl border border-rose-200 p-4">
+                    <input type="hidden" name="id" value={id} />
+                    <input type="hidden" name="status" value="lost" />
+                    <label className="block text-sm font-medium">{copy.closeDate}</label>
+                    <input name="close_date" type="date" defaultValue={opportunity.close_date ?? ''} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" required />
+                    <label className="block text-sm font-medium">{copy.closeValue}</label>
+                    <input name="close_value" type="number" step="0.01" min="0" defaultValue="0" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                    <label className="block text-sm font-medium">{copy.lostReason}</label>
+                    <select name="lost_reason_id" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" required>
+                      <option value="">—</option>
+                      {(lostReasons ?? []).map((reason: any) => <option key={reason.id} value={reason.id}>{reason.name}</option>)}
+                    </select>
+                    <button className="w-full rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-rose-700">{copy.markLost}</button>
+                  </form>
 
-              <form action={closeOpportunity} className="space-y-3 rounded-2xl border border-amber-200 p-4">
-                <input type="hidden" name="id" value={id} />
-                <input type="hidden" name="status" value="on_hold" />
-                <input type="hidden" name="current_probability" value={String(opportunity.probability)} />
-                <label className="block text-sm font-medium">{copy.holdUntil}</label>
-                <input name="on_hold_until" type="date" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" required />
-                <label className="block text-sm font-medium">{copy.closeValue}</label>
-                <input name="close_value" type="number" step="0.01" min="0" defaultValue={Number(opportunity.close_value ?? 0)} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
-                <button className="w-full rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-amber-600">{copy.markHold}</button>
-              </form>
-            </div>
-          </Card>
+                  <form action={closeOpportunity} className="space-y-3 rounded-2xl border border-amber-200 p-4">
+                    <input type="hidden" name="id" value={id} />
+                    <input type="hidden" name="status" value="on_hold" />
+                    <input type="hidden" name="current_probability" value={String(opportunity.probability)} />
+                    <label className="block text-sm font-medium">{copy.holdUntil}</label>
+                    <input name="on_hold_until" type="date" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" required />
+                    <label className="block text-sm font-medium">{copy.closeValue}</label>
+                    <input name="close_value" type="number" step="0.01" min="0" defaultValue={Number(opportunity.close_value ?? 0)} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                    <button className="w-full rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-amber-600">{copy.markHold}</button>
+                  </form>
+                </div>
+              </Card>
+            </>
+          ) : null}
         </div>
 
-        <div className="space-y-6">
+        <div className="space-y-6 lg:col-span-1">
           <Card className="p-6">
             <SectionTitle title={copy.productsPanel} description={t.opportunities.stageChangeRule} />
             <div className="mt-4 space-y-3">
@@ -376,170 +461,196 @@ export default async function OpportunityDetailPage({
                 <p className="text-sm text-slate-500">{t.common.noProductsYet}</p>
               )}
             </div>
-            <form action={addOpportunityProduct} className="mt-5 space-y-4 border-t border-slate-200 pt-4">
-              <input type="hidden" name="opportunity_id" value={id} />
-              <div>
-                <label className="mb-1 block text-sm font-medium">{t.common.products}</label>
-                <select name="product_id" className="w-full rounded-xl border border-slate-200 px-3 py-2.5">
-                  <option value="">—</option>
-                  {(products ?? []).map((product: any) => <option key={product.id} value={product.id}>{product.name}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium">{copy.customItem}</label>
-                <input name="custom_item_name" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
-              </div>
-              <div className="grid gap-4 md:grid-cols-2">
+            {canManageOpportunity ? (
+              <form action={addOpportunityProduct} className="mt-5 space-y-4 border-t border-slate-200 pt-4">
+                <input type="hidden" name="opportunity_id" value={id} />
                 <div>
-                  <label className="mb-1 block text-sm font-medium">{copy.quantity}</label>
-                  <input name="quantity_estimate" type="number" step="0.01" min="0" defaultValue="1" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                  <label className="mb-1 block text-sm font-medium">{t.common.products}</label>
+                  <select name="product_id" className="w-full rounded-xl border border-slate-200 px-3 py-2.5">
+                    <option value="">—</option>
+                    {(products ?? []).map((product: any) => <option key={product.id} value={product.id}>{product.name}</option>)}
+                  </select>
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium">{copy.unitPrice}</label>
-                  <input name="unit_price_estimate" type="number" step="0.01" min="0" defaultValue="0" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                  <label className="mb-1 block text-sm font-medium">{copy.customItem}</label>
+                  <input name="custom_item_name" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
                 </div>
-              </div>
-              <button className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm hover:bg-slate-50">{copy.addLine}</button>
-            </form>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium">{copy.quantity}</label>
+                    <input name="quantity_estimate" type="number" step="0.01" min="0" defaultValue="1" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium">{copy.unitPrice}</label>
+                    <input name="unit_price_estimate" type="number" step="0.01" min="0" defaultValue="0" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                  </div>
+                </div>
+                <button className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm hover:bg-slate-50">{copy.addLine}</button>
+              </form>
+            ) : null}
           </Card>
 
           <Card className="p-6">
             <SectionTitle title={copy.docsPanel} />
-            <div className="mt-4 space-y-3">
-              {documentsWithUrls.length > 0 ? documentsWithUrls.map((document: any) => (
-                <div key={document.id} className="rounded-2xl border border-slate-200 p-4 text-sm text-slate-700">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="font-medium">{document.document_types?.name ?? '—'}</p>
-                    <Pill tone={document.status === 'accepted' ? 'emerald' : document.status === 'rejected' ? 'rose' : 'amber'}>{document.status}</Pill>
-                  </div>
-                  <p className="mt-2 text-slate-500">{document.request_date ?? '—'} → {document.due_date ?? '—'}</p>
-                  {document.notes ? <p className="mt-2">{document.notes}</p> : null}
-                  {document.file_name ? (
-                    <div className="mt-3 flex items-center gap-2 text-xs text-slate-500">
-                      <span>{copy.uploaded}: {document.file_name}</span>
-                      {document.signedUrl ? <a href={document.signedUrl} target="_blank" rel="noreferrer" className="font-medium text-slate-700 underline-offset-4 hover:underline">{copy.download}</a> : null}
+            {canViewPrivatePanels ? (
+              <>
+                <div className="mt-4 space-y-3">
+                  {documentsWithUrls.length > 0 ? documentsWithUrls.map((document: any) => (
+                    <div key={document.id} className="rounded-2xl border border-slate-200 p-4 text-sm text-slate-700">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="font-medium">{document.document_types?.name ?? '—'}</p>
+                        <Pill tone={document.status === 'accepted' ? 'emerald' : document.status === 'rejected' ? 'rose' : 'amber'}>{document.status}</Pill>
+                      </div>
+                      <p className="mt-2 text-slate-500">{document.request_date ?? '—'} → {document.due_date ?? '—'}</p>
+                      {document.notes ? <p className="mt-2">{document.notes}</p> : null}
+                      {document.file_name ? (
+                        <div className="mt-3 flex items-center gap-2 text-xs text-slate-500">
+                          <span>{copy.uploaded}: {document.file_name}</span>
+                          {document.signedUrl ? <a href={document.signedUrl} target="_blank" rel="noreferrer" className="font-medium text-slate-700 underline-offset-4 hover:underline">{copy.download}</a> : null}
+                        </div>
+                      ) : null}
                     </div>
-                  ) : null}
+                  )) : <p className="text-sm text-slate-500">{copy.noDocs}</p>}
                 </div>
-              )) : <p className="text-sm text-slate-500">{copy.noDocs}</p>}
-            </div>
-            <form action={addOpportunityDocument} className="mt-5 space-y-4 border-t border-slate-200 pt-4">
-              <input type="hidden" name="opportunity_id" value={id} />
-              <div>
-                <label className="mb-1 block text-sm font-medium">{copy.addDoc}</label>
-                <select name="document_type_id" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" required>
-                  <option value="">—</option>
-                  {(documentTypes ?? []).map((documentType: any) => <option key={documentType.id} value={documentType.id}>{documentType.name}</option>)}
-                </select>
-              </div>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                  <label className="mb-1 block text-sm font-medium">Request date</label>
-                  <input name="request_date" type="date" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium">Due date</label>
-                  <input name="due_date" type="date" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
-                </div>
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium">Status</label>
-                <select name="status" defaultValue="requested" className="w-full rounded-xl border border-slate-200 px-3 py-2.5">
-                  {['requested', 'in_progress', 'uploaded', 'sent', 'accepted', 'rejected'].map((status) => <option key={status} value={status}>{status}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium">{copy.uploadFile}</label>
-                <input name="file" type="file" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium">{copy.details}</label>
-                <textarea name="notes" rows={3} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
-              </div>
-              <button className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm hover:bg-slate-50">{copy.addDoc}</button>
-            </form>
+                {canManageOpportunity ? (
+                  <form action={addOpportunityDocument} className="mt-5 space-y-4 border-t border-slate-200 pt-4">
+                    <input type="hidden" name="opportunity_id" value={id} />
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">{copy.addDoc}</label>
+                      <select name="document_type_id" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" required>
+                        <option value="">—</option>
+                        {(documentTypes ?? []).map((documentType: any) => <option key={documentType.id} value={documentType.id}>{documentType.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">Request date</label>
+                        <input name="request_date" type="date" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">Due date</label>
+                        <input name="due_date" type="date" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">Status</label>
+                      <select name="status" defaultValue="requested" className="w-full rounded-xl border border-slate-200 px-3 py-2.5">
+                        {['requested', 'in_progress', 'uploaded', 'sent', 'accepted', 'rejected'].map((status) => <option key={status} value={status}>{status}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">{copy.uploadFile}</label>
+                      <input name="file" type="file" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">{copy.details}</label>
+                      <textarea name="notes" rows={3} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                    </div>
+                    <button className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm hover:bg-slate-50">{copy.addDoc}</button>
+                  </form>
+                ) : null}
+              </>
+            ) : (
+              <p className="mt-4 text-sm text-slate-600">{copy.privatePanelsNotice}</p>
+            )}
           </Card>
 
           <Card className="p-6">
             <SectionTitle title={copy.stageHistory} />
-            <div className="mt-4 space-y-3 text-sm text-slate-600">
-              {(history ?? []).length > 0 ? history!.map((entry: any) => (
-                <div key={entry.id} className="rounded-2xl border border-slate-200 p-4">
-                  <p className="font-medium">{entry.opportunity_stages?.name ?? '—'}</p>
-                  <p>{entry.changed_at?.slice(0, 10) ?? '—'} · {Number(entry.to_probability ?? 0)}%</p>
-                </div>
-              )) : <p className="text-slate-500">{copy.noHistory}</p>}
-            </div>
+            {canViewPrivatePanels ? (
+              <div className="mt-4 space-y-3 text-sm text-slate-600">
+                {(history ?? []).length > 0 ? history!.map((entry: any) => (
+                  <div key={entry.id} className="rounded-2xl border border-slate-200 p-4">
+                    <p className="font-medium">{entry.opportunity_stages?.name ?? '—'}</p>
+                    <p>{entry.changed_at?.slice(0, 10) ?? '—'} · {Number(entry.to_probability ?? 0)}%</p>
+                  </div>
+                )) : <p className="text-slate-500">{copy.noHistory}</p>}
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-slate-600">{copy.privatePanelsNotice}</p>
+            )}
           </Card>
         </div>
 
-        <div className="space-y-6">
+        <div className="space-y-6 lg:col-span-1">
           <Card className="p-6">
             <SectionTitle title={copy.activityTimeline} />
-            <div className="mt-4 space-y-3">
-              {(activities ?? []).length > 0 ? activities!.map((activity: any) => (
-                <div key={activity.id} className="rounded-2xl border border-slate-200 p-4 text-sm text-slate-700">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="font-medium">{activity.summary}</p>
-                    <Pill tone="amber">{activity.activity_type}</Pill>
+            {canViewPrivatePanels ? (
+              <div className="mt-4 space-y-3">
+                {(activities ?? []).length > 0 ? activities!.map((activity: any) => (
+                  <div key={activity.id} className="rounded-2xl border border-slate-200 p-4 text-sm text-slate-700">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="font-medium">{activity.summary}</p>
+                      <Pill tone="amber">{activity.activity_type}</Pill>
+                    </div>
+                    <p className="mt-2 text-slate-500">{activity.activity_at?.slice(0, 10) ?? '—'}</p>
+                    {activity.details ? <p className="mt-2">{activity.details}</p> : null}
+                    {activity.next_step ? <p className="mt-2 text-slate-500">→ {activity.next_step}</p> : null}
                   </div>
-                  <p className="mt-2 text-slate-500">{activity.activity_at?.slice(0, 10) ?? '—'}</p>
-                  {activity.details ? <p className="mt-2">{activity.details}</p> : null}
-                  {activity.next_step ? <p className="mt-2 text-slate-500">→ {activity.next_step}</p> : null}
-                </div>
-              )) : <p className="text-sm text-slate-500">{copy.noActivities}</p>}
-            </div>
+                )) : <p className="text-sm text-slate-500">{copy.noActivities}</p>}
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-slate-600">{copy.privatePanelsNotice}</p>
+            )}
           </Card>
 
           <Card className="p-6">
             <SectionTitle title={copy.followUpTasks} />
-            <div className="mt-4 space-y-3">
-              {(tasks ?? []).length > 0 ? tasks!.map((task: any) => (
-                <div key={task.id} className="rounded-2xl border border-slate-200 p-4 text-sm text-slate-700">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="font-medium">{task.description}</p>
-                    <Pill tone={task.status === 'completed' ? 'emerald' : task.status === 'overdue' ? 'rose' : 'amber'}>{task.status}</Pill>
+            {canViewPrivatePanels ? (
+              <div className="mt-4 space-y-3">
+                {(tasks ?? []).length > 0 ? tasks!.map((task: any) => (
+                  <div key={task.id} className="rounded-2xl border border-slate-200 p-4 text-sm text-slate-700">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="font-medium">{task.description}</p>
+                      <Pill tone={task.status === 'completed' ? 'emerald' : task.status === 'overdue' ? 'rose' : 'amber'}>{task.status}</Pill>
+                    </div>
+                    <p className="mt-2 text-slate-500">{task.due_date ?? '—'}</p>
                   </div>
-                  <p className="mt-2 text-slate-500">{task.due_date ?? '—'}</p>
-                </div>
-              )) : <p className="text-sm text-slate-500">{copy.noTasks}</p>}
-            </div>
+                )) : <p className="text-sm text-slate-500">{copy.noTasks}</p>}
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-slate-600">{copy.privatePanelsNotice}</p>
+            )}
           </Card>
 
-          <Card className="p-6">
-            <SectionTitle title={copy.addActivity} />
-            <form action={addOpportunityActivity} className="mt-4 space-y-4">
-              <input type="hidden" name="opportunity_id" value={id} />
-              <div>
-                <label className="mb-1 block text-sm font-medium">Tipo</label>
-                <select name="activity_type" className="w-full rounded-xl border border-slate-200 px-3 py-2.5">
-                  <option value="meeting">meeting</option>
-                  <option value="call">call</option>
-                  <option value="email">email</option>
-                  <option value="quote_sent">quote_sent</option>
-                  <option value="internal_note">internal_note</option>
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium">{copy.summary}</label>
-                <input name="summary" required placeholder={locale === 'es' ? 'Ej. Cliente pidió propuesta para evento de empresa' : 'E.g. Customer asked for proposal for company event'} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium">{copy.details}</label>
-                <textarea name="details" rows={3} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium">{copy.nextStep}</label>
-                <input name="next_step" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium">{copy.nextStepDate}</label>
-                <input name="next_step_due_date" type="date" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
-              </div>
-              <button className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800">{copy.addActivity}</button>
-            </form>
-            <Link href="/opportunities" className="mt-4 inline-flex rounded-xl border border-slate-200 px-4 py-2.5 text-sm hover:bg-slate-50">{t.common.back}</Link>
-          </Card>
+          {canManageOpportunity ? (
+            <Card className="p-6">
+              <SectionTitle title={copy.addActivity} />
+              <form action={addOpportunityActivity} className="mt-4 space-y-4">
+                <input type="hidden" name="opportunity_id" value={id} />
+                <div>
+                  <label className="mb-1 block text-sm font-medium">Tipo</label>
+                  <select name="activity_type" className="w-full rounded-xl border border-slate-200 px-3 py-2.5">
+                    <option value="meeting">meeting</option>
+                    <option value="call">call</option>
+                    <option value="email">email</option>
+                    <option value="quote_sent">quote_sent</option>
+                    <option value="internal_note">internal_note</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium">{copy.summary}</label>
+                  <input name="summary" required placeholder={locale === 'es' ? 'Ej. Cliente pidió propuesta para evento de empresa' : 'E.g. Customer asked for proposal for company event'} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium">{copy.details}</label>
+                  <textarea name="details" rows={3} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium">{copy.nextStep}</label>
+                  <input name="next_step" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium">{copy.nextStepDate}</label>
+                  <input name="next_step_due_date" type="date" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                </div>
+                <button className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800">{copy.addActivity}</button>
+              </form>
+              <Link href="/opportunities" className="mt-4 inline-flex rounded-xl border border-slate-200 px-4 py-2.5 text-sm hover:bg-slate-50">{t.common.back}</Link>
+            </Card>
+          ) : (
+            <Link href="/opportunities" className="inline-flex rounded-xl border border-slate-200 px-4 py-2.5 text-sm hover:bg-slate-50">{t.common.back}</Link>
+          )}
         </div>
       </div>
     </div>

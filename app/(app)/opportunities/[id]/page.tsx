@@ -275,6 +275,17 @@ export default async function OpportunityDetailPage({
     calendarDownload: locale === 'es' ? 'Descargar .ics' : 'Download .ics',
     emailSent: locale === 'es' ? 'Email enviado al responsable' : 'Email sent to owner',
     emailPending: locale === 'es' ? 'Email pendiente / SMTP no configurado' : 'Email pending / SMTP not configured',
+    calendarToggle: locale === 'es' ? 'Crear evento de calendario' : 'Create calendar event',
+    calendarToggleHint: locale === 'es'
+      ? 'Actívalo sólo si esta actividad necesita una cita en calendario y un archivo .ics.'
+      : 'Turn this on only if this activity needs a calendar appointment and an .ics file.',
+    calendarEventDate: locale === 'es' ? 'Fecha del evento' : 'Event date',
+    startTime24: locale === 'es' ? 'Hora de inicio (24 h)' : 'Start time (24h)',
+    endTime24: locale === 'es' ? 'Hora de fin (24 h)' : 'End time (24h)',
+    calendarHelp: locale === 'es'
+      ? 'Usa formato de 24 horas. Ejemplo: 14:30.'
+      : 'Use 24-hour format. Example: 14:30.',
+    locationOptional: locale === 'es' ? 'Ubicación (opcional)' : 'Location (optional)',
     addDoc: locale === 'es' ? 'Registrar documento' : 'Track document',
     uploadFile: locale === 'es' ? 'Adjuntar archivo' : 'Attach file',
     uploaded: locale === 'es' ? 'Archivo cargado' : 'File uploaded',
@@ -302,6 +313,11 @@ export default async function OpportunityDetailPage({
     stageSummary: locale === 'es' ? 'Resumen actual' : 'Current summary',
     status: locale === 'es' ? 'Estatus' : 'Status',
   };
+
+  const formLabelClass = 'mb-1.5 block text-sm font-semibold text-slate-700';
+  const formInputClass = 'w-full rounded-2xl border border-slate-300 px-4 py-3 text-base text-slate-900 shadow-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200';
+  const formTextareaClass = `${formInputClass} min-h-[112px] resize-y`;
+  const schedulerPanelClass = 'rounded-2xl border border-slate-200 bg-slate-50 p-4';
 
   const readOnlyMessage = canManageOpportunity
     ? null
@@ -620,8 +636,11 @@ export default async function OpportunityDetailPage({
                     <p className="mt-2 text-slate-500">{activity.activity_at?.slice(0, 10) ?? '—'}</p>
                     {activity.scheduled_date && activity.scheduled_time ? (
                       <div className="mt-2 rounded-xl bg-slate-50 p-3 text-xs text-slate-600">
-                        <p><span className="font-medium">{copy.scheduleStart}:</span> {activity.scheduled_date} {String(activity.scheduled_time).slice(0, 5)}</p>
-                        <p><span className="font-medium">{copy.scheduleEnd}:</span> {activity.scheduled_end_date ?? '—'} {activity.scheduled_end_time ? String(activity.scheduled_end_time).slice(0, 5) : '—'}</p>
+                        <p>
+                          <span className="font-medium">{copy.scheduleStart}:</span>{' '}
+                          {activity.scheduled_date} · {String(activity.scheduled_time).slice(0, 5)}
+                          {activity.scheduled_end_time ? `–${String(activity.scheduled_end_time).slice(0, 5)}` : ''}
+                        </p>
                         <p><span className="font-medium">{copy.timezone}:</span> {activity.timezone ?? 'America/Mexico_City'}</p>
                         {activity.location ? <p><span className="font-medium">{copy.location}:</span> {activity.location}</p> : null}
                         <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -662,11 +681,12 @@ export default async function OpportunityDetailPage({
           {canManageOpportunity ? (
             <Card className="p-6">
               <SectionTitle title={copy.addActivity} />
-              <form action={addOpportunityActivity} className="mt-4 space-y-4">
+              <form action={addOpportunityActivity} className="mt-4 space-y-5">
                 <input type="hidden" name="opportunity_id" value={id} />
+                <input type="hidden" name="timezone" value="America/Mexico_City" />
                 <div>
-                  <label className="mb-1 block text-sm font-medium">Tipo</label>
-                  <select name="activity_type" className="w-full rounded-xl border border-slate-200 px-3 py-2.5">
+                  <label className={formLabelClass}>Tipo</label>
+                  <select name="activity_type" className={formInputClass}>
                     <option value="meeting">meeting</option>
                     <option value="call">call</option>
                     <option value="email">email</option>
@@ -675,50 +695,68 @@ export default async function OpportunityDetailPage({
                   </select>
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium">{copy.summary}</label>
-                  <input name="summary" required placeholder={locale === 'es' ? 'Ej. Cliente pidió propuesta para evento de empresa' : 'E.g. Customer asked for proposal for company event'} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                  <label className={formLabelClass}>{copy.summary}</label>
+                  <input name="summary" required placeholder={locale === 'es' ? 'Ej. Cliente pidió propuesta para evento de empresa' : 'E.g. Customer asked for proposal for company event'} className={formInputClass} />
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium">{copy.details}</label>
-                  <textarea name="details" rows={3} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                  <label className={formLabelClass}>{copy.details}</label>
+                  <textarea name="details" rows={4} className={formTextareaClass} />
                 </div>
-                <p className="text-xs text-slate-500">{copy.nextActionManagedNote}</p>
-                <div>
-                  <label className="mb-1 block text-sm font-medium">{copy.nextStep}</label>
-                  <input name="next_step" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium">{copy.nextStepDate}</label>
-                  <input name="next_step_due_date" type="date" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
-                </div>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div>
-                    <label className="mb-1 block text-sm font-medium">{copy.scheduleStart}</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <input name="scheduled_date" type="date" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
-                      <input name="scheduled_time" type="time" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-sm font-semibold text-slate-700">{copy.currentFollowUpLabel}</p>
+                  <p className="mt-1 text-xs text-slate-500">{copy.nextActionManagedNote}</p>
+                  <div className="mt-4 grid gap-4 md:grid-cols-[minmax(0,1fr),220px]">
+                    <div>
+                      <label className={formLabelClass}>{copy.nextStep}</label>
+                      <input name="next_step" className={formInputClass} />
                     </div>
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-sm font-medium">{copy.scheduleEnd}</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <input name="scheduled_end_date" type="date" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
-                      <input name="scheduled_end_time" type="time" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                    <div>
+                      <label className={formLabelClass}>{copy.nextStepDate}</label>
+                      <input name="next_step_due_date" type="date" className={formInputClass} />
                     </div>
                   </div>
                 </div>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div>
-                    <label className="mb-1 block text-sm font-medium">{copy.timezone}</label>
-                    <input name="timezone" defaultValue="America/Mexico_City" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-sm font-medium">{copy.location}</label>
-                    <input name="location" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                <div>
+                  <input id="calendar_event_enabled" type="checkbox" name="calendar_event_enabled" value="on" className="peer sr-only" />
+                  <label htmlFor="calendar_event_enabled" className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-4 transition hover:border-slate-300 peer-checked:border-slate-300 peer-checked:bg-slate-50">
+                    <span className="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded border border-slate-300 bg-white text-[10px] font-bold text-slate-500">✓</span>
+                    <span>
+                      <span className="block text-sm font-semibold text-slate-800">{copy.calendarToggle}</span>
+                      <span className="mt-1 block text-xs text-slate-500">{copy.calendarToggleHint}</span>
+                    </span>
+                  </label>
+                  <div className="mt-4 hidden peer-checked:block">
+                    <div className={schedulerPanelClass}>
+                      <div className="grid gap-4 md:grid-cols-[220px,1fr,1fr]">
+                        <div>
+                          <label className={formLabelClass}>{copy.calendarEventDate}</label>
+                          <input name="scheduled_date" type="date" className={formInputClass} />
+                        </div>
+                        <div>
+                          <label className={formLabelClass}>{copy.startTime24}</label>
+                          <input name="scheduled_time" type="time" lang="en-GB" step="60" className={formInputClass} />
+                        </div>
+                        <div>
+                          <label className={formLabelClass}>{copy.endTime24}</label>
+                          <input name="scheduled_end_time" type="time" lang="en-GB" step="60" className={formInputClass} />
+                        </div>
+                      </div>
+                      <div className="mt-4 grid gap-4 md:grid-cols-[minmax(0,1fr),220px]">
+                        <div>
+                          <label className={formLabelClass}>{copy.locationOptional}</label>
+                          <input name="location" className={formInputClass} />
+                        </div>
+                        <div className="rounded-2xl bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">
+                          <p className="font-medium text-slate-700">{copy.timezone}</p>
+                          <p className="mt-1">America/Mexico_City</p>
+                        </div>
+                      </div>
+                      <p className="mt-3 text-xs text-slate-500">{copy.calendarHelp}</p>
+                      <p className="mt-1 text-xs text-slate-500">{locale === 'es' ? 'Si activas esta opción, el sistema intentará enviar un email al responsable con un archivo .ics.' : 'If you enable this option, the system will try to email the owner with an .ics file.'}</p>
+                    </div>
                   </div>
                 </div>
-                <p className="text-xs text-slate-500">{locale === 'es' ? 'Si capturas un horario completo, el sistema intentará enviar un email al responsable con un archivo .ics.' : 'If you provide a full schedule, the system will try to email the owner with an .ics file.'}</p>
-                <button className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800">{copy.addActivity}</button>
+                <button className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800">{copy.addActivity}</button>
               </form>
               <Link href="/opportunities" className="mt-4 inline-flex rounded-xl border border-slate-200 px-4 py-2.5 text-sm hover:bg-slate-50">{t.common.back}</Link>
             </Card>

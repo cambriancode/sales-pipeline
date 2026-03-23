@@ -166,23 +166,24 @@ export async function addOpportunityActivity(formData: FormData) {
   const summary = String(formData.get('summary') ?? '').trim() || String(formData.get('details') ?? '').trim();
   const nextStep = String(formData.get('next_step') ?? '').trim() || null;
   const nextStepDueDate = String(formData.get('next_step_due_date') ?? '').trim() || null;
-  const scheduledDate = String(formData.get('scheduled_date') ?? '').trim() || null;
-  const scheduledTime = String(formData.get('scheduled_time') ?? '').trim() || null;
-  const scheduledEndDate = String(formData.get('scheduled_end_date') ?? '').trim() || null;
-  const scheduledEndTime = String(formData.get('scheduled_end_time') ?? '').trim() || null;
-  const timezone = String(formData.get('timezone') ?? '').trim() || null;
-  const location = String(formData.get('location') ?? '').trim() || null;
-
-  const schedulingRequested = Boolean(
-    scheduledDate || scheduledTime || scheduledEndDate || scheduledEndTime || timezone || location,
-  );
+  const calendarEventEnabled = String(formData.get('calendar_event_enabled') ?? '').trim() === 'on';
+  const scheduledDate = calendarEventEnabled ? (String(formData.get('scheduled_date') ?? '').trim() || null) : null;
+  const scheduledTime = calendarEventEnabled ? (String(formData.get('scheduled_time') ?? '').trim() || null) : null;
+  const scheduledEndTime = calendarEventEnabled ? (String(formData.get('scheduled_end_time') ?? '').trim() || null) : null;
+  const timezone = calendarEventEnabled ? (String(formData.get('timezone') ?? '').trim() || 'America/Mexico_City') : null;
+  const location = calendarEventEnabled ? (String(formData.get('location') ?? '').trim() || null) : null;
+  const scheduledEndDate = calendarEventEnabled ? scheduledDate : null;
 
   if ((nextStep && !nextStepDueDate) || (!nextStep && nextStepDueDate)) {
     redirect(withMessage(detailPath, 'error', 'Next step and due date must be captured together') as Route);
   }
 
-  if (schedulingRequested && (!scheduledDate || !scheduledTime || !scheduledEndDate || !scheduledEndTime)) {
-    redirect(withMessage(detailPath, 'error', 'Scheduled activities require start and end date/time') as Route);
+  if (calendarEventEnabled && (!scheduledDate || !scheduledTime || !scheduledEndTime)) {
+    redirect(withMessage(detailPath, 'error', 'Calendar events require one date plus start and end time') as Route);
+  }
+
+  if (calendarEventEnabled && scheduledTime && scheduledEndTime && scheduledEndTime <= scheduledTime) {
+    redirect(withMessage(detailPath, 'error', 'End time must be later than start time') as Route);
   }
 
   const payload = {
@@ -196,7 +197,7 @@ export async function addOpportunityActivity(formData: FormData) {
     scheduled_time: scheduledTime,
     scheduled_end_date: scheduledEndDate,
     scheduled_end_time: scheduledEndTime,
-    timezone: schedulingRequested ? (timezone || 'America/Mexico_City') : null,
+    timezone,
     location,
   };
 
@@ -251,7 +252,7 @@ export async function addOpportunityActivity(formData: FormData) {
   let successMessage = 'Activity added';
 
   if (
-    schedulingRequested
+    calendarEventEnabled
     && inserted.calendar_uid
     && scheduledDate
     && scheduledTime

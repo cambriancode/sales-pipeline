@@ -705,22 +705,25 @@ export default async function OpportunityDetailPage({
                     </div>
                   </div>
                 </div>
-                <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <input id="calendar_event_enabled" type="checkbox" name="calendar_event_enabled" value="on" className="peer sr-only" />
-                  <label htmlFor="calendar_event_enabled" className="flex cursor-pointer items-start gap-3">
-                    <span className="mt-0.5 flex h-5 w-5 items-center justify-center rounded border border-slate-300 bg-white text-transparent shadow-sm transition peer-checked:border-slate-900 peer-checked:bg-slate-900 peer-checked:text-white">✓</span>
-                    <span>
-                      <span className="block text-sm font-semibold text-slate-800">{copy.calendarToggle}</span>
-                      <span className="mt-1 block text-xs text-slate-500">{copy.calendarToggleHint}</span>
-                    </span>
+                <div className="relative rounded-2xl border border-slate-200 bg-white p-4">
+                  <input
+                    id="calendar_event_enabled"
+                    type="checkbox"
+                    name="calendar_event_enabled"
+                    value="on"
+                    className="peer absolute left-4 top-4 h-5 w-5 rounded border-slate-300 accent-slate-900"
+                  />
+                  <label htmlFor="calendar_event_enabled" className="block cursor-pointer pl-9 pr-1">
+                    <span className="block text-sm font-semibold text-slate-800">{copy.calendarToggle}</span>
+                    <span className="mt-1 block text-xs text-slate-500">{copy.calendarToggleHint}</span>
                   </label>
                   <div className="mt-4 hidden peer-checked:block">
                     <div className={schedulerPanelClass}>
-                      <div className="grid gap-4 md:grid-cols-[220px,1fr,1fr]">
-                        <div>
-                          <label className={formLabelClass}>{copy.calendarEventDate}</label>
-                          <input name="scheduled_date" type="date" className={formInputClass} />
-                        </div>
+                      <div className="max-w-sm">
+                        <label className={formLabelClass}>{copy.calendarEventDate}</label>
+                        <input name="scheduled_date" type="date" className={formInputClass} />
+                      </div>
+                      <div className="mt-4 grid gap-4 md:grid-cols-2">
                         <div>
                           <label className={formLabelClass}>{copy.startTime24}</label>
                           <input
@@ -729,7 +732,7 @@ export default async function OpportunityDetailPage({
                             inputMode="numeric"
                             pattern="^([01]\d|2[0-3]):[0-5]\d$"
                             placeholder={copy.timePlaceholder}
-                            className={formInputClass}
+                            className={`${formInputClass} font-medium tracking-[0.12em]`}
                           />
                         </div>
                         <div>
@@ -740,7 +743,7 @@ export default async function OpportunityDetailPage({
                             inputMode="numeric"
                             pattern="^([01]\d|2[0-3]):[0-5]\d$"
                             placeholder={copy.timePlaceholder}
-                            className={formInputClass}
+                            className={`${formInputClass} font-medium tracking-[0.12em]`}
                           />
                         </div>
                       </div>

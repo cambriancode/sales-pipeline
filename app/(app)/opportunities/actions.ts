@@ -15,6 +15,22 @@ function withMessage(path: string, key: 'success' | 'error', message: string): s
   return `${path}?${params.toString()}`;
 }
 
+
+function normalizeTime24h(value: string | null) {
+  if (!value) return null;
+  const trimmed = value.trim();
+  const match = /^(\d{1,2}):(\d{2})$/.exec(trimmed);
+  if (!match) return null;
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+    return null;
+  }
+
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
+}
+
 export async function createOpportunity(formData: FormData) {
   const profile = await getCurrentProfile();
   if (!profile) redirect('/login');
@@ -234,8 +250,10 @@ export async function addOpportunityActivity(formData: FormData) {
   const nextStepDueDate = String(formData.get('next_step_due_date') ?? '').trim() || null;
   const calendarEventEnabled = String(formData.get('calendar_event_enabled') ?? '').trim() === 'on';
   const scheduledDate = calendarEventEnabled ? (String(formData.get('scheduled_date') ?? '').trim() || null) : null;
-  const scheduledTime = calendarEventEnabled ? (String(formData.get('scheduled_time') ?? '').trim() || null) : null;
-  const scheduledEndTime = calendarEventEnabled ? (String(formData.get('scheduled_end_time') ?? '').trim() || null) : null;
+  const scheduledTimeInput = calendarEventEnabled ? (String(formData.get('scheduled_time') ?? '').trim() || null) : null;
+  const scheduledEndTimeInput = calendarEventEnabled ? (String(formData.get('scheduled_end_time') ?? '').trim() || null) : null;
+  const scheduledTime = calendarEventEnabled ? normalizeTime24h(scheduledTimeInput) : null;
+  const scheduledEndTime = calendarEventEnabled ? normalizeTime24h(scheduledEndTimeInput) : null;
   const timezone = calendarEventEnabled ? (String(formData.get('timezone') ?? '').trim() || 'America/Mexico_City') : null;
   const location = calendarEventEnabled ? (String(formData.get('location') ?? '').trim() || null) : null;
   const scheduledEndDate = calendarEventEnabled ? scheduledDate : null;
@@ -244,8 +262,12 @@ export async function addOpportunityActivity(formData: FormData) {
     redirect(withMessage(detailPath, 'error', 'Next step and due date must be captured together') as Route);
   }
 
-  if (calendarEventEnabled && (!scheduledDate || !scheduledTime || !scheduledEndTime)) {
+  if (calendarEventEnabled && (!scheduledDate || !scheduledTimeInput || !scheduledEndTimeInput)) {
     redirect(withMessage(detailPath, 'error', 'Calendar events require one date plus start and end time') as Route);
+  }
+
+  if (calendarEventEnabled && (!scheduledTime || !scheduledEndTime)) {
+    redirect(withMessage(detailPath, 'error', 'Use 24-hour time in HH:MM format') as Route);
   }
 
   if (calendarEventEnabled && scheduledTime && scheduledEndTime && scheduledEndTime <= scheduledTime) {

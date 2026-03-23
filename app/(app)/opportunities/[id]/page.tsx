@@ -294,6 +294,7 @@ export default async function OpportunityDetailPage({
     calendarEventDate: locale === 'es' ? 'Fecha del evento' : 'Event date',
     startTime24: locale === 'es' ? 'Hora de inicio (24 h)' : 'Start time (24h)',
     endTime24: locale === 'es' ? 'Hora de fin (24 h)' : 'End time (24h)',
+    timePlaceholder: locale === 'es' ? 'HH:MM' : 'HH:MM',
     calendarHelp: locale === 'es'
       ? 'Usa formato de 24 horas. Ejemplo: 14:30.'
       : 'Use 24-hour format. Example: 14:30.',
@@ -396,6 +397,37 @@ export default async function OpportunityDetailPage({
               </div>
             </div>
           </Card>
+
+          <Card className="p-6">
+            <SectionTitle title={copy.stakeholderPanel} />
+            {canViewPrivatePanels ? (
+              <div className="mt-4 space-y-3">
+                {(opportunityContacts ?? []).length > 0 ? opportunityContacts!.map((entry: any) => {
+                  const contact = Array.isArray(entry.contacts) ? entry.contacts[0] : entry.contacts;
+
+                  return (
+                    <div key={entry.id} className="rounded-2xl border border-slate-200 p-4 text-sm text-slate-700">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-medium">{contact?.full_name ?? '—'}</p>
+                          <p className="text-slate-500">{contact?.job_title ?? entry.relationship_role ?? '—'}</p>
+                        </div>
+                        {entry.is_primary ? <Pill tone="sky">{copy.stakeholderPrimary}</Pill> : null}
+                      </div>
+                      <div className="mt-2 text-sm text-slate-600">
+                        <p>{copy.stakeholderRole}: {entry.relationship_role ?? contact?.job_title ?? '—'}</p>
+                        <p>{contact?.email ?? '—'}</p>
+                        <p>{contact?.phone ?? '—'}</p>
+                      </div>
+                    </div>
+                  );
+                }) : <p className="text-sm text-slate-500">{copy.stakeholderNone}</p>}
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-slate-600">{copy.privatePanelsNotice}</p>
+            )}
+          </Card>
+
 
           {canManageOpportunity ? (
             <>
@@ -635,91 +667,6 @@ export default async function OpportunityDetailPage({
             </Card>
           ) : null}
 
-          <Card className="p-6">
-            <SectionTitle title={copy.activityTimeline} />
-            {canViewPrivatePanels ? (
-              <div className="mt-4 space-y-3">
-                {(activities ?? []).length > 0 ? activities!.map((activity: any) => (
-                  <div key={activity.id} className="rounded-2xl border border-slate-200 p-4 text-sm text-slate-700">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="font-medium">{activity.summary}</p>
-                      <Pill tone="amber">{activity.activity_type}</Pill>
-                    </div>
-                    <p className="mt-2 text-slate-500">{activity.activity_at?.slice(0, 10) ?? '—'}</p>
-                    {activity.scheduled_date && activity.scheduled_time ? (
-                      <div className="mt-2 rounded-xl bg-slate-50 p-3 text-xs text-slate-600">
-                        <p>
-                          <span className="font-medium">{copy.scheduleStart}:</span>{' '}
-                          {activity.scheduled_date} · {String(activity.scheduled_time).slice(0, 5)}
-                          {activity.scheduled_end_time ? `–${String(activity.scheduled_end_time).slice(0, 5)}` : ''}
-                        </p>
-                        <p><span className="font-medium">{copy.timezone}:</span> {activity.timezone ?? 'America/Mexico_City'}</p>
-                        {activity.location ? <p><span className="font-medium">{copy.location}:</span> {activity.location}</p> : null}
-                        <div className="mt-2 flex flex-wrap items-center gap-2">
-                          <a href={`/api/activities/${activity.id}/calendar`} className="font-medium text-slate-700 underline-offset-4 hover:underline">{copy.calendarDownload}</a>
-                          <Pill tone={activity.notification_sent_at ? 'emerald' : 'amber'}>{activity.notification_sent_at ? copy.emailSent : copy.emailPending}</Pill>
-                        </div>
-                      </div>
-                    ) : null}
-                    {activity.details ? <p className="mt-2">{activity.details}</p> : null}
-                    {activity.next_step ? <p className="mt-2 text-slate-500">→ {activity.next_step}</p> : null}
-                  </div>
-                )) : <p className="text-sm text-slate-500">{copy.noActivities}</p>}
-              </div>
-            ) : (
-              <p className="mt-4 text-sm text-slate-600">{copy.privatePanelsNotice}</p>
-            )}
-          </Card>
-
-          <Card className="p-6">
-            <SectionTitle title={copy.stakeholderPanel} />
-            {canViewPrivatePanels ? (
-              <div className="mt-4 space-y-3">
-                {(opportunityContacts ?? []).length > 0 ? opportunityContacts!.map((entry: any) => {
-                  const contact = Array.isArray(entry.contacts) ? entry.contacts[0] : entry.contacts;
-
-                  return (
-                    <div key={entry.id} className="rounded-2xl border border-slate-200 p-4 text-sm text-slate-700">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="font-medium">{contact?.full_name ?? '—'}</p>
-                          <p className="text-slate-500">{contact?.job_title ?? entry.relationship_role ?? '—'}</p>
-                        </div>
-                        {entry.is_primary ? <Pill tone="sky">{copy.stakeholderPrimary}</Pill> : null}
-                      </div>
-                      <div className="mt-2 text-sm text-slate-600">
-                        <p>{copy.stakeholderRole}: {entry.relationship_role ?? contact?.job_title ?? '—'}</p>
-                        <p>{contact?.email ?? '—'}</p>
-                        <p>{contact?.phone ?? '—'}</p>
-                      </div>
-                    </div>
-                  );
-                }) : <p className="text-sm text-slate-500">{copy.stakeholderNone}</p>}
-              </div>
-            ) : (
-              <p className="mt-4 text-sm text-slate-600">{copy.privatePanelsNotice}</p>
-            )}
-          </Card>
-
-          <Card className="p-6">
-            <SectionTitle title={copy.followUpTasks} />
-            {canViewPrivatePanels ? (
-              <div className="mt-4 space-y-3">
-                {(tasks ?? []).length > 0 ? tasks!.map((task: any) => (
-                  <div key={task.id} className="rounded-2xl border border-slate-200 p-4 text-sm text-slate-700">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="font-medium">{task.description}</p>
-                      <Pill tone={task.status === 'completed' ? 'emerald' : task.status === 'overdue' ? 'rose' : 'amber'}>{task.status}</Pill>
-                    </div>
-                    <p className="mt-2 text-slate-500">{task.due_date ?? '—'}</p>
-                  </div>
-                )) : <p className="text-sm text-slate-500">{copy.noTasks}</p>}
-              </div>
-            ) : (
-              <p className="mt-4 text-sm text-slate-600">{copy.privatePanelsNotice}</p>
-            )}
-          </Card>
-
           {canManageOpportunity ? (
             <Card className="p-6">
               <SectionTitle title={copy.addActivity} />
@@ -759,18 +706,13 @@ export default async function OpportunityDetailPage({
                   </div>
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <input id="calendar_event_enabled" type="checkbox" name="calendar_event_enabled" value="on" className="peer sr-only" />
-                  <label htmlFor="calendar_event_enabled" className="flex cursor-pointer items-start gap-3 peer-checked:[&_.toggle-box]:border-slate-900 peer-checked:[&_.toggle-box]:bg-slate-900 peer-checked:[&_.toggle-check]:opacity-100">
-                    <span className="toggle-box mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded border border-slate-300 bg-white transition">
-                      <svg viewBox="0 0 20 20" fill="none" className="toggle-check h-3.5 w-3.5 opacity-0 transition" aria-hidden="true">
-                        <path d="M5 10.5 8.25 13.5 15 6.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white" />
-                      </svg>
-                    </span>
-                    <span>
+                  <div className="flex items-start gap-3">
+                    <input id="calendar_event_enabled" type="checkbox" name="calendar_event_enabled" value="on" className="peer mt-1 h-5 w-5 rounded border-slate-300 text-slate-900 focus:ring-slate-400" />
+                    <label htmlFor="calendar_event_enabled" className="cursor-pointer">
                       <span className="block text-sm font-semibold text-slate-800">{copy.calendarToggle}</span>
                       <span className="mt-1 block text-xs text-slate-500">{copy.calendarToggleHint}</span>
-                    </span>
-                  </label>
+                    </label>
+                  </div>
                   <div className="mt-4 hidden peer-checked:block">
                     <div className={schedulerPanelClass}>
                       <div className="grid gap-4 md:grid-cols-[220px,1fr,1fr]">
@@ -780,11 +722,25 @@ export default async function OpportunityDetailPage({
                         </div>
                         <div>
                           <label className={formLabelClass}>{copy.startTime24}</label>
-                          <input name="scheduled_time" type="time" lang="en-GB" step="60" className={formInputClass} />
+                          <input
+                            name="scheduled_time"
+                            type="text"
+                            inputMode="numeric"
+                            pattern="^([01]\d|2[0-3]):[0-5]\d$"
+                            placeholder={copy.timePlaceholder}
+                            className={formInputClass}
+                          />
                         </div>
                         <div>
                           <label className={formLabelClass}>{copy.endTime24}</label>
-                          <input name="scheduled_end_time" type="time" lang="en-GB" step="60" className={formInputClass} />
+                          <input
+                            name="scheduled_end_time"
+                            type="text"
+                            inputMode="numeric"
+                            pattern="^([01]\d|2[0-3]):[0-5]\d$"
+                            placeholder={copy.timePlaceholder}
+                            className={formInputClass}
+                          />
                         </div>
                       </div>
                       <div className="mt-4 grid gap-4 md:grid-cols-[minmax(0,1fr),220px]">
@@ -809,6 +765,62 @@ export default async function OpportunityDetailPage({
           ) : (
             <Link href="/opportunities" className="inline-flex rounded-xl border border-slate-200 px-4 py-2.5 text-sm hover:bg-slate-50">{t.common.back}</Link>
           )}
+
+          <Card className="p-6">
+            <SectionTitle title={copy.activityTimeline} />
+            {canViewPrivatePanels ? (
+              <div className="mt-4 space-y-3">
+                {(activities ?? []).length > 0 ? activities!.map((activity: any) => (
+                  <div key={activity.id} className="rounded-2xl border border-slate-200 p-4 text-sm text-slate-700">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="font-medium">{activity.summary}</p>
+                      <Pill tone="amber">{activity.activity_type}</Pill>
+                    </div>
+                    <p className="mt-2 text-slate-500">{activity.activity_at?.slice(0, 10) ?? '—'}</p>
+                    {activity.scheduled_date && activity.scheduled_time ? (
+                      <div className="mt-2 rounded-xl bg-slate-50 p-3 text-xs text-slate-600">
+                        <p>
+                          <span className="font-medium">{copy.scheduleStart}:</span>{' '}
+                          {activity.scheduled_date} · {String(activity.scheduled_time).slice(0, 5)}
+                          {activity.scheduled_end_time ? `–${String(activity.scheduled_end_time).slice(0, 5)}` : ''}
+                        </p>
+                        <p><span className="font-medium">{copy.timezone}:</span> {activity.timezone ?? 'America/Mexico_City'}</p>
+                        {activity.location ? <p><span className="font-medium">{copy.location}:</span> {activity.location}</p> : null}
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <a href={`/api/activities/${activity.id}/calendar`} className="font-medium text-slate-700 underline-offset-4 hover:underline">{copy.calendarDownload}</a>
+                          <Pill tone={activity.notification_sent_at ? 'emerald' : 'amber'}>{activity.notification_sent_at ? copy.emailSent : copy.emailPending}</Pill>
+                        </div>
+                      </div>
+                    ) : null}
+                    {activity.details ? <p className="mt-2">{activity.details}</p> : null}
+                    {activity.next_step ? <p className="mt-2 text-slate-500">→ {activity.next_step}</p> : null}
+                  </div>
+                )) : <p className="text-sm text-slate-500">{copy.noActivities}</p>}
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-slate-600">{copy.privatePanelsNotice}</p>
+            )}
+          </Card>
+
+          <Card className="p-6">
+            <SectionTitle title={copy.followUpTasks} />
+            {canViewPrivatePanels ? (
+              <div className="mt-4 space-y-3">
+                {(tasks ?? []).length > 0 ? tasks!.map((task: any) => (
+                  <div key={task.id} className="rounded-2xl border border-slate-200 p-4 text-sm text-slate-700">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="font-medium">{task.description}</p>
+                      <Pill tone={task.status === 'completed' ? 'emerald' : task.status === 'overdue' ? 'rose' : 'amber'}>{task.status}</Pill>
+                    </div>
+                    <p className="mt-2 text-slate-500">{task.due_date ?? '—'}</p>
+                  </div>
+                )) : <p className="text-sm text-slate-500">{copy.noTasks}</p>}
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-slate-600">{copy.privatePanelsNotice}</p>
+            )}
+          </Card>
+
         </div>
       </div>
     </div>

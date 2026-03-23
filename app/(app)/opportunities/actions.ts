@@ -19,11 +19,24 @@ function withMessage(path: string, key: 'success' | 'error', message: string): s
 function normalizeTime24h(value: string | null) {
   if (!value) return null;
   const trimmed = value.trim();
-  const match = /^(\d{1,2}):(\d{2})$/.exec(trimmed);
-  if (!match) return null;
 
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
+  let hours: number | null = null;
+  let minutes: number | null = null;
+
+  const colonMatch = /^(\d{1,2}):(\d{2})$/.exec(trimmed);
+  const compactMatch = /^(\d{3,4})$/.exec(trimmed);
+
+  if (colonMatch) {
+    hours = Number(colonMatch[1]);
+    minutes = Number(colonMatch[2]);
+  } else if (compactMatch) {
+    const digits = compactMatch[1].padStart(4, '0');
+    hours = Number(digits.slice(0, 2));
+    minutes = Number(digits.slice(2, 4));
+  } else {
+    return null;
+  }
+
   if (!Number.isInteger(hours) || !Number.isInteger(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
     return null;
   }

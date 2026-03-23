@@ -6,7 +6,7 @@ import { createAccount } from '../actions';
 
 export default async function NewAccountPage() {
   const supabase = await createClient();
-  const { t } = await getI18n();
+  const { t, locale } = await getI18n();
 
   const { data: accountTypes } = await supabase.from('account_types').select('id, name').order('sort_order');
 
@@ -28,6 +28,11 @@ export default async function NewAccountPage() {
           type: t.accounts.type,
           notes: t.accounts.notes,
           hint: t.accounts.newHint,
+          stakeholderSection: locale === 'es' ? 'Stakeholder principal (opcional)' : 'Primary stakeholder (optional)',
+          stakeholderHint: locale === 'es' ? 'Captura desde el inicio a la persona clave de esta cuenta.' : 'Capture the first key contact for this account during setup.',
+          stakeholderName: locale === 'es' ? 'Nombre del contacto' : 'Contact name',
+          stakeholderEmail: 'Email',
+          stakeholderPhone: locale === 'es' ? 'Teléfono' : 'Phone',
         }}
       />
     </div>

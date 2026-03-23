@@ -26,6 +26,22 @@ export async function createAccount(formData: FormData) {
   const { data, error } = await supabase.from('accounts').insert(payload).select('id').single();
   if (error) throw new Error(error.message);
 
+  const stakeholderName = String(formData.get('stakeholder_full_name') ?? '').trim();
+  const stakeholderEmail = String(formData.get('stakeholder_email') ?? '').trim() || null;
+  const stakeholderPhone = String(formData.get('stakeholder_phone') ?? '').trim() || null;
+
+  if (stakeholderName) {
+    const { error: contactError } = await supabase.from('contacts').insert({
+      account_id: data.id,
+      full_name: stakeholderName,
+      email: stakeholderEmail,
+      phone: stakeholderPhone,
+      created_by_user_id: profile.id,
+    });
+
+    if (contactError) throw new Error(contactError.message);
+  }
+
   revalidatePath('/accounts');
   redirect(`/accounts/${data.id}`);
 }

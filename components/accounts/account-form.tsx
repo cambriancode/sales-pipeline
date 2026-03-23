@@ -18,6 +18,11 @@ export function AccountForm({
     type: string;
     notes: string;
     hint: string;
+    stakeholderSection: string;
+    stakeholderHint: string;
+    stakeholderName: string;
+    stakeholderEmail: string;
+    stakeholderPhone: string;
   };
   accountTypes: Array<{ id: string; name: string }>;
 }) {
@@ -58,6 +63,25 @@ export function AccountForm({
       <div>
         <label className="mb-1 block text-sm font-medium">{labels.country}</label>
         <input name="billing_country" defaultValue="México" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+      </div>
+
+      <div className="lg:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-5">
+        <h3 className="text-base font-semibold text-slate-900">{labels.stakeholderSection}</h3>
+        <p className="mt-1 text-sm text-slate-500">{labels.stakeholderHint}</p>
+        <div className="mt-4 grid gap-4 md:grid-cols-3">
+          <div>
+            <label className="mb-1 block text-sm font-medium">{labels.stakeholderName}</label>
+            <input name="stakeholder_full_name" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium">{labels.stakeholderPhone}</label>
+            <input name="stakeholder_phone" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium">{labels.stakeholderEmail}</label>
+            <input name="stakeholder_email" type="email" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+          </div>
+        </div>
       </div>
 
       <div className="lg:col-span-2">

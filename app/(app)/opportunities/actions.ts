@@ -49,8 +49,73 @@ export async function createOpportunity(formData: FormData) {
     throw new Error('Missing required fields');
   }
 
-  const { data, error } = await supabase.from('opportunities').insert(payload).select('id').single();
+  const { data, error } = await supabase.from('opportunities').insert(payload).select('id, account_id').single();
   if (error) throw new Error(error.message);
+
+  const customerContactName = String(formData.get('customer_contact_full_name') ?? '').trim();
+  const customerContactRole = String(formData.get('customer_contact_job_title') ?? '').trim() || null;
+  const customerContactEmail = String(formData.get('customer_contact_email') ?? '').trim() || null;
+  const customerContactPhone = String(formData.get('customer_contact_phone') ?? '').trim() || null;
+
+  if (customerContactName) {
+    let contactId: string | null = null;
+
+    if (customerContactEmail) {
+      const { data: existingByEmail } = await supabase
+        .from('contacts')
+        .select('id')
+        .eq('account_id', data.account_id)
+        .eq('email', customerContactEmail)
+        .limit(1)
+        .maybeSingle();
+
+      contactId = existingByEmail?.id ?? null;
+    }
+
+    if (!contactId) {
+      const { data: existingByName } = await supabase
+        .from('contacts')
+        .select('id')
+        .eq('account_id', data.account_id)
+        .eq('full_name', customerContactName)
+        .limit(1)
+        .maybeSingle();
+
+      contactId = existingByName?.id ?? null;
+    }
+
+    if (!contactId) {
+      const { data: insertedContact, error: contactError } = await supabase
+        .from('contacts')
+        .insert({
+          account_id: data.account_id,
+          full_name: customerContactName,
+          job_title: customerContactRole,
+          email: customerContactEmail,
+          phone: customerContactPhone,
+          is_decision_maker: true,
+          created_by_user_id: profile.id,
+        })
+        .select('id')
+        .single();
+
+      if (contactError) throw new Error(contactError.message);
+      contactId = insertedContact.id;
+    }
+
+    if (contactId) {
+      const { error: linkError } = await supabase
+        .from('opportunity_contacts')
+        .upsert({
+          opportunity_id: data.id,
+          contact_id: contactId,
+          relationship_role: customerContactRole ?? 'customer_owner',
+          is_primary: true,
+        }, { onConflict: 'opportunity_id,contact_id' });
+
+      if (linkError) throw new Error(linkError.message);
+    }
+  }
 
   await syncOpportunityFollowUpTask({
     supabase,
@@ -63,6 +128,7 @@ export async function createOpportunity(formData: FormData) {
   revalidatePath('/dashboard');
   revalidatePath('/opportunities');
   revalidatePath('/tasks');
+  revalidatePath(`/accounts/${data.account_id}` as Route);
   redirect(`/opportunities/${data.id}` as Route);
 }
 

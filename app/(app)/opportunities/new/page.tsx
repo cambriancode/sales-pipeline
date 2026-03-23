@@ -6,7 +6,7 @@ import { createOpportunity } from '../actions';
 
 export default async function NewOpportunityPage({ searchParams }: { searchParams: Promise<{ accountId?: string }> }) {
   const supabase = await createClient();
-  const { t } = await getI18n();
+  const { t, locale } = await getI18n();
   const params = await searchParams;
 
   const [{ data: accounts }, { data: opportunityTypes }, { data: stages }] = await Promise.all([
@@ -35,9 +35,16 @@ export default async function NewOpportunityPage({ searchParams }: { searchParam
           annualValue: t.common.annualValue,
           valueFirst: t.opportunities.valueFirst,
           nextAction: t.common.nextAction,
+          nextActionDate: locale === 'es' ? 'Fecha próxima acción' : 'Next action due date',
           expectedClose: t.opportunities.expectedClose,
           needSummary: t.opportunities.needSummary,
           productPlaceholder: t.opportunities.productPlaceholder,
+          customerStakeholderSection: locale === 'es' ? 'Responsable del cliente (opcional)' : 'Customer-side owner (optional)',
+          customerStakeholderHint: locale === 'es' ? 'Guarda desde el inicio quién es la contraparte principal en esta oportunidad.' : 'Capture the main stakeholder on the customer side for this opportunity.',
+          customerStakeholderName: locale === 'es' ? 'Nombre del contacto' : 'Contact name',
+          customerStakeholderRole: locale === 'es' ? 'Puesto / rol' : 'Job title / role',
+          customerStakeholderEmail: 'Email',
+          customerStakeholderPhone: locale === 'es' ? 'Teléfono' : 'Phone',
         }}
       />
     </div>

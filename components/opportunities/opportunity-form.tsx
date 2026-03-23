@@ -23,6 +23,13 @@ export function OpportunityForm({
     expectedClose: string;
     needSummary: string;
     productPlaceholder: string;
+    nextActionDate: string;
+    customerStakeholderSection: string;
+    customerStakeholderHint: string;
+    customerStakeholderName: string;
+    customerStakeholderRole: string;
+    customerStakeholderEmail: string;
+    customerStakeholderPhone: string;
   };
   accounts: Array<{ id: string; name: string }>;
   opportunityTypes: Array<{ id: string; name: string }>;
@@ -102,12 +109,35 @@ export function OpportunityForm({
       </div>
 
       <div>
-        <label className="mb-1 block text-sm font-medium">Fecha próxima acción</label>
+        <label className="mb-1 block text-sm font-medium">{labels.nextActionDate}</label>
         <input name="next_action_due_date" type="date" required defaultValue={initial?.next_action_due_date} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
       </div>
 
       <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
         {labels.productPlaceholder}
+      </div>
+
+      <div className="lg:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-5">
+        <h3 className="text-base font-semibold text-slate-900">{labels.customerStakeholderSection}</h3>
+        <p className="mt-1 text-sm text-slate-500">{labels.customerStakeholderHint}</p>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-sm font-medium">{labels.customerStakeholderName}</label>
+            <input name="customer_contact_full_name" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium">{labels.customerStakeholderRole}</label>
+            <input name="customer_contact_job_title" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium">{labels.customerStakeholderPhone}</label>
+            <input name="customer_contact_phone" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium">{labels.customerStakeholderEmail}</label>
+            <input name="customer_contact_email" type="email" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+          </div>
+        </div>
       </div>
 
       <div className="lg:col-span-2">

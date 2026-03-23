@@ -162,6 +162,7 @@ export default async function OpportunityDetailPage({
     { data: activities },
     { data: history },
     { data: tasks },
+    { data: opportunityContacts },
     { data: documentTypes },
     { data: documents },
     { data: lostReasons },
@@ -200,6 +201,13 @@ export default async function OpportunityDetailPage({
           .eq('opportunity_id', id)
           .order('due_date', { ascending: true })
           .limit(10)
+      : Promise.resolve({ data: [] as any[] }),
+    canViewPrivatePanels
+      ? supabase
+          .from('opportunity_contacts')
+          .select('id, relationship_role, is_primary, contacts(full_name, job_title, email, phone)')
+          .eq('opportunity_id', id)
+          .order('is_primary', { ascending: false })
       : Promise.resolve({ data: [] as any[] }),
     canManageOpportunity
       ? supabase.from('document_types').select('id, name').order('sort_order')
@@ -267,6 +275,10 @@ export default async function OpportunityDetailPage({
       ? 'La próxima acción se actualiza cuando registras una actividad con siguiente paso.'
       : 'The next action is updated when you log an activity with a next step.',
     noTasks: locale === 'es' ? 'Sin tareas vinculadas todavía.' : 'No linked tasks yet.',
+    stakeholderPanel: locale === 'es' ? 'Stakeholders del cliente' : 'Customer stakeholders',
+    stakeholderPrimary: locale === 'es' ? 'Principal' : 'Primary',
+    stakeholderRole: locale === 'es' ? 'Rol' : 'Role',
+    stakeholderNone: locale === 'es' ? 'Aún no hay stakeholders vinculados a esta oportunidad.' : 'No customer stakeholders linked to this opportunity yet.',
     docsPanel: locale === 'es' ? 'Pipeline documental' : 'Document pipeline',
     scheduleStart: locale === 'es' ? 'Inicio programado' : 'Scheduled start',
     scheduleEnd: locale === 'es' ? 'Fin programado' : 'Scheduled end',
@@ -660,6 +672,36 @@ export default async function OpportunityDetailPage({
           </Card>
 
           <Card className="p-6">
+            <SectionTitle title={copy.stakeholderPanel} />
+            {canViewPrivatePanels ? (
+              <div className="mt-4 space-y-3">
+                {(opportunityContacts ?? []).length > 0 ? opportunityContacts!.map((entry: any) => {
+                  const contact = Array.isArray(entry.contacts) ? entry.contacts[0] : entry.contacts;
+
+                  return (
+                    <div key={entry.id} className="rounded-2xl border border-slate-200 p-4 text-sm text-slate-700">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-medium">{contact?.full_name ?? '—'}</p>
+                          <p className="text-slate-500">{contact?.job_title ?? entry.relationship_role ?? '—'}</p>
+                        </div>
+                        {entry.is_primary ? <Pill tone="sky">{copy.stakeholderPrimary}</Pill> : null}
+                      </div>
+                      <div className="mt-2 text-sm text-slate-600">
+                        <p>{copy.stakeholderRole}: {entry.relationship_role ?? contact?.job_title ?? '—'}</p>
+                        <p>{contact?.email ?? '—'}</p>
+                        <p>{contact?.phone ?? '—'}</p>
+                      </div>
+                    </div>
+                  );
+                }) : <p className="text-sm text-slate-500">{copy.stakeholderNone}</p>}
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-slate-600">{copy.privatePanelsNotice}</p>
+            )}
+          </Card>
+
+          <Card className="p-6">
             <SectionTitle title={copy.followUpTasks} />
             {canViewPrivatePanels ? (
               <div className="mt-4 space-y-3">
@@ -705,21 +747,25 @@ export default async function OpportunityDetailPage({
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <p className="text-sm font-semibold text-slate-700">{copy.currentFollowUpLabel}</p>
                   <p className="mt-1 text-xs text-slate-500">{copy.nextActionManagedNote}</p>
-                  <div className="mt-4 grid gap-4 md:grid-cols-[minmax(0,1fr),220px]">
+                  <div className="mt-4 space-y-4">
                     <div>
                       <label className={formLabelClass}>{copy.nextStep}</label>
                       <input name="next_step" className={formInputClass} />
                     </div>
-                    <div>
+                    <div className="max-w-sm">
                       <label className={formLabelClass}>{copy.nextStepDate}</label>
                       <input name="next_step_due_date" type="date" className={formInputClass} />
                     </div>
                   </div>
                 </div>
-                <div>
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
                   <input id="calendar_event_enabled" type="checkbox" name="calendar_event_enabled" value="on" className="peer sr-only" />
-                  <label htmlFor="calendar_event_enabled" className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-4 transition hover:border-slate-300 peer-checked:border-slate-300 peer-checked:bg-slate-50">
-                    <span className="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded border border-slate-300 bg-white text-[10px] font-bold text-slate-500">✓</span>
+                  <label htmlFor="calendar_event_enabled" className="flex cursor-pointer items-start gap-3 peer-checked:[&_.toggle-box]:border-slate-900 peer-checked:[&_.toggle-box]:bg-slate-900 peer-checked:[&_.toggle-check]:opacity-100">
+                    <span className="toggle-box mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded border border-slate-300 bg-white transition">
+                      <svg viewBox="0 0 20 20" fill="none" className="toggle-check h-3.5 w-3.5 opacity-0 transition" aria-hidden="true">
+                        <path d="M5 10.5 8.25 13.5 15 6.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white" />
+                      </svg>
+                    </span>
                     <span>
                       <span className="block text-sm font-semibold text-slate-800">{copy.calendarToggle}</span>
                       <span className="mt-1 block text-xs text-slate-500">{copy.calendarToggleHint}</span>

@@ -292,9 +292,9 @@ export default async function OpportunityDetailPage({
       ? 'Actívalo sólo si esta actividad necesita una cita en calendario y un archivo .ics.'
       : 'Turn this on only if this activity needs a calendar appointment and an .ics file.',
     calendarEventDate: locale === 'es' ? 'Fecha del evento' : 'Event date',
-    startTime24: locale === 'es' ? 'Hora de inicio (24 h)' : 'Start time (24h)',
-    endTime24: locale === 'es' ? 'Hora de fin (24 h)' : 'End time (24h)',
-    timePlaceholder: locale === 'es' ? '1430 o 14:30' : '1430 or 14:30',
+    startTime24: locale === 'es' ? 'Hora de inicio' : 'Start time',
+    endTime24: locale === 'es' ? 'Hora de fin' : 'End time',
+    timePlaceholder: '14:30',
     calendarHelp: locale === 'es'
       ? 'Usa formato de 24 horas. Puedes escribir 1430 o 14:30.'
       : 'Use 24-hour format. You can type 1430 or 14:30.',
@@ -706,60 +706,63 @@ export default async function OpportunityDetailPage({
                   </div>
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <input id="calendar_event_enabled" type="checkbox" name="calendar_event_enabled" value="on" className="peer sr-only" />
-                  <label htmlFor="calendar_event_enabled" className="flex cursor-pointer items-start gap-3">
-                    <span className="mt-0.5 flex h-5 w-5 items-center justify-center rounded border border-slate-300 bg-white text-white transition peer-checked:border-slate-900 peer-checked:bg-slate-900">
-                      <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 opacity-0 transition peer-checked:opacity-100" aria-hidden="true">
-                        <path d="M3 8.5 6.25 11.5 13 4.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    </span>
-                    <span>
+                  <div className="grid grid-cols-[auto,1fr] items-start gap-x-3 gap-y-4">
+                    <input
+                      id="calendar_event_enabled"
+                      type="checkbox"
+                      name="calendar_event_enabled"
+                      value="on"
+                      className="peer mt-0.5 h-5 w-5 rounded border-slate-300 accent-slate-900"
+                    />
+                    <label htmlFor="calendar_event_enabled" className="cursor-pointer">
                       <span className="block text-sm font-semibold text-slate-800">{copy.calendarToggle}</span>
                       <span className="mt-1 block text-xs text-slate-500">{copy.calendarToggleHint}</span>
-                    </span>
-                  </label>
-                  <div className="mt-4 hidden peer-checked:block">
-                    <div className={schedulerPanelClass}>
-                      <div>
-                        <label className={formLabelClass}>{copy.calendarEventDate}</label>
-                        <input name="scheduled_date" type="date" className={formInputClass} />
-                      </div>
-                      <div className="mt-4 grid gap-4 md:grid-cols-2">
-                        <div className="min-w-0">
-                          <label className={formLabelClass}>{copy.startTime24}</label>
-                          <input
-                            name="scheduled_time"
-                            type="text"
-                            inputMode="numeric"
-                            pattern="^((([01]\d|2[0-3]):[0-5]\d)|(\d{3,4}))$"
-                            placeholder={copy.timePlaceholder}
-                            className={formInputClass}
-                          />
-                        </div>
-                        <div className="min-w-0">
-                          <label className={formLabelClass}>{copy.endTime24}</label>
-                          <input
-                            name="scheduled_end_time"
-                            type="text"
-                            inputMode="numeric"
-                            pattern="^((([01]\d|2[0-3]):[0-5]\d)|(\d{3,4}))$"
-                            placeholder={copy.timePlaceholder}
-                            className={formInputClass}
-                          />
-                        </div>
-                      </div>
-                      <div className="mt-4 space-y-4">
+                    </label>
+                    <div className="col-span-2 hidden peer-checked:block">
+                      <div className={schedulerPanelClass}>
                         <div>
-                          <label className={formLabelClass}>{copy.locationOptional}</label>
-                          <input name="location" className={formInputClass} />
+                          <label className={formLabelClass}>{copy.calendarEventDate}</label>
+                          <input name="scheduled_date" type="date" className={formInputClass} />
                         </div>
-                        <div className="rounded-2xl bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">
-                          <p className="font-medium text-slate-700">{copy.timezone}</p>
-                          <p className="mt-1">America/Mexico_City</p>
+                        <div className="mt-4 grid gap-4 md:grid-cols-2">
+                          <div className="min-w-0">
+                            <label className={formLabelClass}>{copy.startTime24}</label>
+                            <input
+                              name="scheduled_time"
+                              type="text"
+                              inputMode="numeric"
+                              pattern="^((([01]\d|2[0-3]):[0-5]\d)|(\d{3,4}))$"
+                              placeholder={copy.timePlaceholder}
+                              maxLength={5}
+                              className={formInputClass}
+                            />
+                          </div>
+                          <div className="min-w-0">
+                            <label className={formLabelClass}>{copy.endTime24}</label>
+                            <input
+                              name="scheduled_end_time"
+                              type="text"
+                              inputMode="numeric"
+                              pattern="^((([01]\d|2[0-3]):[0-5]\d)|(\d{3,4}))$"
+                              placeholder={copy.timePlaceholder}
+                              maxLength={5}
+                              className={formInputClass}
+                            />
+                          </div>
                         </div>
+                        <div className="mt-4 space-y-4">
+                          <div>
+                            <label className={formLabelClass}>{copy.locationOptional}</label>
+                            <input name="location" className={formInputClass} />
+                          </div>
+                          <div className="rounded-2xl bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">
+                            <p className="font-medium text-slate-700">{copy.timezone}</p>
+                            <p className="mt-1">America/Mexico_City</p>
+                          </div>
+                        </div>
+                        <p className="mt-3 text-xs text-slate-500">{copy.calendarHelp}</p>
+                        <p className="mt-1 text-xs text-slate-500">{locale === 'es' ? 'Si activas esta opción, el sistema intentará enviar un email al responsable con un archivo .ics.' : 'If you enable this option, the system will try to email the owner with an .ics file.'}</p>
                       </div>
-                      <p className="mt-3 text-xs text-slate-500">{copy.calendarHelp}</p>
-                      <p className="mt-1 text-xs text-slate-500">{locale === 'es' ? 'Si activas esta opción, el sistema intentará enviar un email al responsable con un archivo .ics.' : 'If you enable this option, the system will try to email the owner with an .ics file.'}</p>
                     </div>
                   </div>
                 </div>

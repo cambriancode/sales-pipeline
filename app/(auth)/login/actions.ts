@@ -2,67 +2,64 @@
 
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
-import { createAdminClient } from '@/lib/supabase/admin';
+import { finalizeAllowedSession, getAllowedAccessByEmail } from '@/lib/auth';
 
+function encodeEmailParam(email: string) {
+  return encodeURIComponent(email.trim().toLowerCase());
+}
 
-
-export async function signInWithOtp(formData: FormData): Promise<void> {
+export async function requestEmailOtp(formData: FormData): Promise<void> {
   const supabase = await createClient();
-
-  let admin;
-  try {
-    admin = createAdminClient();
-  } catch (err) {
-    console.error('ADMIN CLIENT INIT FAILED:', err);
-    redirect('/login?denied=1');
-  }
-
   const email = formData.get('email')?.toString().trim().toLowerCase() || '';
-  console.log('LOGIN ATTEMPT EMAIL:', email);
 
   if (!email) {
-    console.log('LOGIN DENIED: missing email');
-    redirect('/login?denied=1');
-  }
-console.log('SUPABASE URL RUNTIME:', process.env.NEXT_PUBLIC_SUPABASE_URL);
-console.log('SERVICE KEY PRESENT:', Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY));
-console.log('SERVICE KEY LENGTH:', process.env.SUPABASE_SERVICE_ROLE_KEY?.length ?? 0);
-console.log('SERVICE KEY PREFIX:', process.env.SUPABASE_SERVICE_ROLE_KEY?.slice(0, 12) ?? 'none');
-
-
-
-  const { data: allowed, error: allowedError } = await admin
-    .from('allowed_emails')
-    .select('email, is_active')
-    .eq('email', email)
-    .eq('is_active', true)
-    .maybeSingle();
-
-  console.log('ALLOWLIST RESULT:', { allowed, allowedError });
-
-  if (allowedError || !allowed) {
-    console.log('LOGIN DENIED: not allowlisted');
     redirect('/login?denied=1');
   }
 
-  const siteUrl =
-    process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, '') || 'http://localhost:3000';
-
-  console.log('SITE URL RUNTIME:', process.env.NEXT_PUBLIC_SITE_URL);
-  console.log('EMAIL REDIRECT TO:', `${siteUrl}/api/auth/callback`);  
+  const allowed = await getAllowedAccessByEmail(email);
+  if (!allowed) {
+    redirect('/login?denied=1');
+  }
 
   const { error } = await supabase.auth.signInWithOtp({
     email,
     options: {
-      emailRedirectTo: `${siteUrl}/api/auth/callback`,
+      shouldCreateUser: false,
     },
   });
 
-  console.log('OTP RESULT:', { error });
-
   if (error) {
-    redirect('/login?denied=1');
+    redirect(`/login?denied=1&email=${encodeEmailParam(email)}`);
   }
 
-  redirect('/login?sent=1');
+  redirect(`/login?sent=1&email=${encodeEmailParam(email)}`);
+}
+
+export async function verifyEmailOtp(formData: FormData): Promise<void> {
+  const supabase = await createClient();
+  const email = formData.get('email')?.toString().trim().toLowerCase() || '';
+  const token = formData.get('token')?.toString().replace(/\s+/g, '') || '';
+
+  if (!email || !token) {
+    redirect(`/login?invalid=1${email ? `&email=${encodeEmailParam(email)}` : ''}`);
+  }
+
+  const { data: sessionData, error } = await supabase.auth.verifyOtp({
+    email,
+    token,
+    type: 'email',
+  });
+
+  if (error || !sessionData.user?.email) {
+    redirect(`/login?invalid=1&email=${encodeEmailParam(email)}`);
+  }
+
+  const { allowed } = await finalizeAllowedSession(sessionData.user);
+
+  if (!allowed) {
+    await supabase.auth.signOut();
+    redirect(`/login?denied=1&email=${encodeEmailParam(email)}`);
+  }
+
+  redirect('/dashboard');
 }

@@ -5,7 +5,7 @@ import type { Route } from 'next';
 import { redirect } from 'next/navigation';
 import { getCurrentProfile } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
-import { closeOpenTasksForOpportunity, createTaskFromNextStep, syncOpportunityFollowUpTask } from '@/lib/task-sync';
+import { closeOpenTasksForOpportunity, syncOpportunityFollowUpTask } from '@/lib/task-sync';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { buildOpportunityDocumentPath, ensureOpportunityDocumentBucket } from '@/lib/document-storage';
 import { sendScheduledActivityNotification } from '@/lib/activity-notifications';
@@ -103,8 +103,6 @@ export async function updateOpportunity(formData: FormData) {
     probability: Number(stage?.default_probability ?? formData.get('probability') ?? 5),
     annual_value_estimate: Number(formData.get('annual_value_estimate') ?? 0) || 0,
     first_value_estimate: Number(formData.get('first_value_estimate') ?? 0) || 0,
-    next_action: String(formData.get('next_action') ?? '').trim(),
-    next_action_due_date: String(formData.get('next_action_due_date') ?? '').trim(),
     expected_close_date: String(formData.get('expected_close_date') ?? '').trim() || null,
     need_summary: String(formData.get('need_summary') ?? '').trim() || null,
     updated_at: new Date().toISOString(),
@@ -114,14 +112,6 @@ export async function updateOpportunity(formData: FormData) {
   if (error) {
     redirect(withMessage(detailPath, 'error', error.message) as Route);
   }
-
-  await syncOpportunityFollowUpTask({
-    supabase,
-    opportunityId: id,
-    ownerUserId: profile.id,
-    description: payload.next_action,
-    dueDate: payload.next_action_due_date,
-  });
 
   revalidatePath('/dashboard');
   revalidatePath('/opportunities');
@@ -187,6 +177,10 @@ export async function addOpportunityActivity(formData: FormData) {
     scheduledDate || scheduledTime || scheduledEndDate || scheduledEndTime || timezone || location,
   );
 
+  if ((nextStep && !nextStepDueDate) || (!nextStep && nextStepDueDate)) {
+    redirect(withMessage(detailPath, 'error', 'Next step and due date must be captured together') as Route);
+  }
+
   if (schedulingRequested && (!scheduledDate || !scheduledTime || !scheduledEndDate || !scheduledEndTime)) {
     redirect(withMessage(detailPath, 'error', 'Scheduled activities require start and end date/time') as Route);
   }
@@ -230,10 +224,25 @@ export async function addOpportunityActivity(formData: FormData) {
     : (opportunity as any)?.profiles;
 
   if (nextStep && nextStepDueDate) {
-    await createTaskFromNextStep({
+    const ownerUserId = ownerProfile?.id ?? (opportunity as any)?.owner_user_id ?? profile.id;
+
+    const { error: followUpError } = await supabase
+      .from('opportunities')
+      .update({
+        next_action: nextStep,
+        next_action_due_date: nextStepDueDate,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', opportunityId);
+
+    if (followUpError) {
+      redirect(withMessage(detailPath, 'error', followUpError.message) as Route);
+    }
+
+    await syncOpportunityFollowUpTask({
       supabase,
       opportunityId,
-      ownerUserId: ownerProfile?.id ?? (opportunity as any)?.owner_user_id ?? profile.id,
+      ownerUserId,
       description: nextStep,
       dueDate: nextStepDueDate,
     });
@@ -286,6 +295,64 @@ export async function addOpportunityActivity(formData: FormData) {
   revalidatePath('/dashboard');
   revalidatePath('/tasks');
   redirect(withMessage(detailPath, 'success', successMessage) as Route);
+}
+
+export async function rescheduleOpportunityFollowUp(formData: FormData) {
+  const profile = await getCurrentProfile();
+  if (!profile) redirect('/login');
+
+  const supabase = await createClient();
+  const id = String(formData.get('id') ?? '').trim();
+  const detailPath = `/opportunities/${id}` as Route;
+  const dueDate = String(formData.get('next_action_due_date') ?? '').trim();
+
+  if (!id || !dueDate) {
+    redirect(withMessage(detailPath, 'error', 'A new follow-up date is required') as Route);
+  }
+
+  const { data: opportunity, error: opportunityError } = await supabase
+    .from('opportunities')
+    .select('id, next_action, owner_user_id, status')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (opportunityError || !opportunity) {
+    redirect(withMessage(detailPath, 'error', opportunityError?.message ?? 'Opportunity not found') as Route);
+  }
+
+  if (opportunity.status !== 'open') {
+    redirect(withMessage(detailPath, 'error', 'Only open opportunities can be rescheduled') as Route);
+  }
+
+  if (!opportunity.next_action) {
+    redirect(withMessage(detailPath, 'error', 'This opportunity has no current next action to reschedule') as Route);
+  }
+
+  const { error } = await supabase
+    .from('opportunities')
+    .update({
+      next_action_due_date: dueDate,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id);
+
+  if (error) {
+    redirect(withMessage(detailPath, 'error', error.message) as Route);
+  }
+
+  await syncOpportunityFollowUpTask({
+    supabase,
+    opportunityId: id,
+    ownerUserId: opportunity.owner_user_id,
+    description: opportunity.next_action,
+    dueDate,
+  });
+
+  revalidatePath('/dashboard');
+  revalidatePath('/opportunities');
+  revalidatePath('/tasks');
+  revalidatePath(detailPath);
+  redirect(withMessage(detailPath, 'success', 'Follow-up rescheduled') as Route);
 }
 
 export async function addOpportunityDocument(formData: FormData) {

@@ -8,7 +8,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { OPPORTUNITY_DOCUMENT_BUCKET } from '@/lib/document-storage';
 import { getI18n } from '@/lib/i18n';
 import { demoOpportunities } from '@/lib/demo-data';
-import { addOpportunityActivity, addOpportunityDocument, addOpportunityProduct, closeOpportunity, updateOpportunity } from '../actions';
+import { addOpportunityActivity, addOpportunityDocument, addOpportunityProduct, closeOpportunity, rescheduleOpportunityFollowUp, updateOpportunity } from '../actions';
 
 function Notice({ type, message }: { type: 'success' | 'error'; message: string }) {
   const tones = type === 'success'
@@ -256,6 +256,16 @@ export default async function OpportunityDetailPage({
     noHistory: locale === 'es' ? 'Sin cambios de etapa todavía.' : 'No stage changes yet.',
     nextStepDate: locale === 'es' ? 'Fecha siguiente paso' : 'Next-step due date',
     followUpTasks: locale === 'es' ? 'Tareas vinculadas' : 'Linked tasks',
+    followUpControl: locale === 'es' ? 'Seguimiento actual' : 'Current follow-up',
+    followUpControlDescription: locale === 'es'
+      ? 'La próxima acción ya no se edita directamente aquí. Actualízala desde una nueva actividad o sólo reprograma la fecha actual.'
+      : 'The next action is no longer edited directly here. Update it from a new activity, or only reschedule the current date.',
+    rescheduleFollowUp: locale === 'es' ? 'Reprogramar seguimiento' : 'Reschedule follow-up',
+    rescheduleDate: locale === 'es' ? 'Nueva fecha de seguimiento' : 'New follow-up date',
+    currentFollowUpLabel: locale === 'es' ? 'Próxima acción vigente' : 'Current next action',
+    nextActionManagedNote: locale === 'es'
+      ? 'La próxima acción se actualiza cuando registras una actividad con siguiente paso.'
+      : 'The next action is updated when you log an activity with a next step.',
     noTasks: locale === 'es' ? 'Sin tareas vinculadas todavía.' : 'No linked tasks yet.',
     docsPanel: locale === 'es' ? 'Pipeline documental' : 'Document pipeline',
     scheduleStart: locale === 'es' ? 'Inicio programado' : 'Scheduled start',
@@ -391,13 +401,11 @@ export default async function OpportunityDetailPage({
                       <input name="first_value_estimate" type="number" step="0.01" min="0" defaultValue={Number((opportunity as any).first_value_estimate ?? 0)} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
                     </div>
                   </div>
-                  <div>
-                    <label className="mb-1 block text-sm font-medium">{t.common.nextAction}</label>
-                    <input name="next_action" defaultValue={opportunity.next_action ?? ''} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-sm font-medium">Fecha próxima acción</label>
-                    <input name="next_action_due_date" type="date" defaultValue={opportunity.next_action_due_date ?? ''} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                    <p className="font-medium">{copy.currentFollowUpLabel}</p>
+                    <p className="mt-1">{opportunity.next_action ?? '—'}</p>
+                    <p className="mt-1 text-slate-500">{opportunity.next_action_due_date ?? '—'}</p>
+                    <p className="mt-3 text-xs text-slate-500">{copy.nextActionManagedNote}</p>
                   </div>
                   <div>
                     <label className="mb-1 block text-sm font-medium">{t.opportunities.needSummary}</label>
@@ -580,6 +588,25 @@ export default async function OpportunityDetailPage({
         </div>
 
         <div className="space-y-6 lg:col-span-1">
+          {canManageOpportunity ? (
+            <Card className="p-6">
+              <SectionTitle title={copy.followUpControl} description={copy.followUpControlDescription} />
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                <p className="text-xs text-slate-500">{copy.currentFollowUpLabel}</p>
+                <p className="mt-1 font-medium">{opportunity.next_action ?? '—'}</p>
+                <p className="mt-1 text-slate-500">{opportunity.next_action_due_date ?? '—'}</p>
+              </div>
+              <form action={rescheduleOpportunityFollowUp} className="mt-4 space-y-3">
+                <input type="hidden" name="id" value={id} />
+                <div>
+                  <label className="mb-1 block text-sm font-medium">{copy.rescheduleDate}</label>
+                  <input name="next_action_due_date" type="date" defaultValue={opportunity.next_action_due_date ?? ''} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" required />
+                </div>
+                <button className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm hover:bg-slate-50">{copy.rescheduleFollowUp}</button>
+              </form>
+            </Card>
+          ) : null}
+
           <Card className="p-6">
             <SectionTitle title={copy.activityTimeline} />
             {canViewPrivatePanels ? (
@@ -655,6 +682,7 @@ export default async function OpportunityDetailPage({
                   <label className="mb-1 block text-sm font-medium">{copy.details}</label>
                   <textarea name="details" rows={3} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />
                 </div>
+                <p className="text-xs text-slate-500">{copy.nextActionManagedNote}</p>
                 <div>
                   <label className="mb-1 block text-sm font-medium">{copy.nextStep}</label>
                   <input name="next_step" className="w-full rounded-xl border border-slate-200 px-3 py-2.5" />

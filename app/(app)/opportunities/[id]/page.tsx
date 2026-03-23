@@ -706,13 +706,18 @@ export default async function OpportunityDetailPage({
                   </div>
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <div className="flex items-start gap-3">
-                    <input id="calendar_event_enabled" type="checkbox" name="calendar_event_enabled" value="on" className="peer mt-1 h-5 w-5 rounded border-slate-300 text-slate-900 focus:ring-slate-400" />
-                    <label htmlFor="calendar_event_enabled" className="cursor-pointer">
+                  <input id="calendar_event_enabled" type="checkbox" name="calendar_event_enabled" value="on" className="peer sr-only" />
+                  <label htmlFor="calendar_event_enabled" className="flex cursor-pointer items-start gap-3">
+                    <span className="mt-0.5 flex h-5 w-5 items-center justify-center rounded border border-slate-300 bg-white text-white transition peer-checked:border-slate-900 peer-checked:bg-slate-900">
+                      <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 opacity-0 transition peer-checked:opacity-100" aria-hidden="true">
+                        <path d="M3 8.5 6.25 11.5 13 4.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </span>
+                    <span>
                       <span className="block text-sm font-semibold text-slate-800">{copy.calendarToggle}</span>
                       <span className="mt-1 block text-xs text-slate-500">{copy.calendarToggleHint}</span>
-                    </label>
-                  </div>
+                    </span>
+                  </label>
                   <div className="mt-4 hidden peer-checked:block">
                     <div className={schedulerPanelClass}>
                       <div>

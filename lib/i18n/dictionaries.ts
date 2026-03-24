@@ -15,6 +15,7 @@ export const dictionaries = {
       adminAccess: "Admin · Accesos",
       adminCatalog: "Admin · Catálogo",
       adminUsers: "Admin · Usuarios",
+      adminSnapshot: "Admin · Respaldo",
     },
     common: {
       profilePending: "Perfil pendiente",
@@ -152,6 +153,10 @@ export const dictionaries = {
         title: "Usuarios y perfiles",
         description: "Vista administrativa de usuarios autorizados y perfiles existentes.",
       },
+      snapshot: {
+        title: "Respaldo de datos",
+        description: "Exporta un snapshot administrativo con tablas, usuarios de Auth y manifiesto de archivos.",
+      },
       productRule: "Desde la etapa 4 en adelante, la oportunidad debe tener al menos un producto o servicio vinculado.",
       authRule: "El acceso es por correo autorizado únicamente. Los correos no listados no pueden recibir liga de acceso.",
     },
@@ -168,6 +173,7 @@ export const dictionaries = {
       adminAccess: "Admin · Access",
       adminCatalog: "Admin · Catalog",
       adminUsers: "Admin · Users",
+      adminSnapshot: "Admin · Snapshot",
     },
     common: {
       profilePending: "Profile pending",
@@ -304,6 +310,10 @@ export const dictionaries = {
       users: {
         title: "Users and profiles",
         description: "Administrative view of approved emails and existing profiles.",
+      },
+      snapshot: {
+        title: "Data snapshot",
+        description: "Export an admin snapshot with tables, Auth users, and a file manifest.",
       },
       productRule: "From stage 4 onward, an opportunity must have at least one linked product or service.",
       authRule: "Access is invite-only. Emails not on the approved list cannot receive a sign-in link.",

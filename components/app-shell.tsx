@@ -27,6 +27,7 @@ export function AppShell({
       adminAccess: string;
       adminCatalog: string;
       adminUsers: string;
+      adminSnapshot: string;
     };
   };
   children: ReactNode;
@@ -45,6 +46,7 @@ export function AppShell({
         { href: "/admin/access", label: labels.nav.adminAccess },
         { href: "/admin/catalog", label: labels.nav.adminCatalog },
         { href: "/admin/users", label: labels.nav.adminUsers },
+        { href: "/admin/snapshot", label: labels.nav.adminSnapshot },
       ]
     : [];
 
